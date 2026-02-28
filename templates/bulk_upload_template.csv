@@ -1,0 +1,18 @@
+Key Result,Activity Title,Task 1,Task 2,Task 3,Task 4,Task 5,Task 6,Task 7,Task 8,Task 9,Task 10
+KR1,Improve Mobile Responsiveness,Test API,Run UAT,Test responsiveness,Design new flow,Gather feedback,Create mockups,Analyze feedback,Update FAQs,Create tutorial content,Deploy changes
+KR1,Improve Profile Security,Finalize release,Optimize timing,Conduct meeting,Create mockups,Test responsiveness,Implement CSS,Complete backend fix,Integrate feedback loop,Fix layout bugs,Finalize rollout
+KR1,Optimize Dashboard Logic,Add encryption,Design new flow,Draft report,Add accessibility,Prepare slides,Deploy to staging,Identify pain points,Review permissions,Develop onboarding screens,Analyze feedback
+KR1,Revamp Settings Page,Implement MFA,Refine UX,Deploy changes,Launch pilot,Design wireframes,Analyze feedback,Create mockups,Review with team,Design new flow,Update UI components
+KR2,Refactor Backend Services,Integrate feedback loop,Fix layout bugs,Finalize release,Create mockups,Review analytics,Conduct meeting,Develop onboarding screens,Identify pain points,Review requirements,Draft report
+KR2,Update User Profiles,Implement MFA,Conduct meeting,Set triggers,Prepare slides,Finalize rollout,Conduct user interviews,Test API,Update UI components,Draft report,Create templates
+KR2,Improve Mobile Responsiveness,Finalize release,Collect feedback,Develop onboarding screens,Review analytics,Add personalization,Add encryption,Update FAQs,Refactor code,Draft report,Fix layout bugs
+KR2,Improve Onboarding Experience,Test responsiveness,Create templates,Confirm compliance,Adjust content,Draft report,Deploy to staging,Update documentation,Add encryption,Prepare slides,Deploy changes
+KR2,Automate Onboarding Emails,Draft welcome email,Confirm compliance,Patch vulnerabilities,Conduct user interviews,Update UI components,Develop onboarding screens,Finalize rollout,Train support team,Refine UX,Update FAQs
+KR3,Integrate Third-Party APIs,Test API,Update UI components,Fix layout bugs,Test with new users,Review analytics,Integrate feedback loop,Monitor open rates,Draft welcome email,Launch pilot,Implement MFA
+KR3,Revamp Settings Page,Update documentation,Patch vulnerabilities,Refactor code,Draft report,Identify pain points,Collect feedback,Map current process,Review with team,Prepare slides,Add encryption
+KR3,Optimize Dashboard Logic,Update UI components,Set triggers,Create tutorial content,Identify pain points,Finalize release,Test login flow,Draft report,Develop onboarding screens,Test with new users,Run UAT
+KR3,Automate Onboarding Emails,Gather feedback,Analyze feedback,Finalize rollout,Implement CSS,Write documentation,Set triggers,Update documentation,Run UAT,Draft report,Conduct user interviews
+KR3,Enhance Accessibility Features,Collect feedback,Design wireframes,Fix layout bugs,Develop onboarding screens,Review permissions,Review with team,Add accessibility,Conduct meeting,Release update,Optimize timing
+KR3,Streamline Reporting,Draft report,Test new features,Test responsiveness,Set triggers,Map current process,Develop onboarding screens,Collect feedback,Update FAQs,Monitor open rates,Update UI components
+KR3,Upgrade Notification System,Analyze feedback,Test responsiveness,Map current process,Finalize release,Set triggers,Complete backend fix,Test with new users,Monitor open rates,Integrate feedback loop,Implement CSS
+KR3,Improve Data Export,Release update,Conduct meeting,Collect feedback,Gather feedback,Review requirements,Test with new users,Refactor code,Train support team,Run UAT,Review permissions
