@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import DOMPurify from 'dompurify';
 import { Target, Plus, Trash2, X, ChevronLeft, ChevronRight, AlertTriangle, LoaderCircle, ShieldCheck, DatabaseZap, Lock, CheckCircle2, RefreshCw, AlertCircle, RefreshCcw, Download, UploadCloud, FileText, Check, TrendingUp, Save } from 'lucide-react';
 import { KeyResult, Activity, User } from '../types';
 import { logAudit, getSessionUser, getRegistryUsers, getCurrentQuarterInfo, canManageObjectives, generateLocalUUID, getRegistryKeyResults, getWATTime } from '../utils';
@@ -209,20 +210,20 @@ export const BusinessObjectives: React.FC<{ selectedYear: number, setSelectedYea
   };
 
   return (
-    <div className="bg-white p-6 md:p-10 rounded-[4px] shadow-xl border border-slate-100 animate-fade-in relative">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12 border-b border-slate-50 pb-8">
+    <div className="bg-white p-6 rounded-xl shadow-lg border border-slate-200 animate-fade-in relative">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-6">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight uppercase">Strategic Governance Engine</h2>
+          <h2 className="text-xl font-bold text-slate-900 uppercase">Strategic Governance Engine</h2>
           <div className="flex items-center gap-2 mt-2">
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#067032]/10 text-[#067032]">
-              <ShieldCheck size={14} className="mr-1.5" /> AUTHORITATIVE CONTEXT {selectedYear}
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-[#067032]/10 text-[#067032]">
+              <ShieldCheck size={12} className="mr-1" /> AUTHORITATIVE CONTEXT {selectedYear}
             </span>
           </div>
         </div>
-        <div className="flex items-center bg-slate-100 rounded-[4px] p-1 border border-slate-200">
-          <button onClick={() => setSelectedYear(selectedYear - 1)} className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-white rounded-[4px] transition-all"><ChevronLeft size={18} /></button>
-          <span className="font-bold text-slate-800 w-20 text-center text-sm">{selectedYear}</span>
-          <button onClick={() => setSelectedYear(selectedYear + 1)} className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-white rounded-[4px] transition-all"><ChevronRight size={18} /></button>
+        <div className="flex items-center bg-slate-100 rounded-lg p-1 border border-slate-200">
+          <button onClick={() => setSelectedYear(selectedYear - 1)} className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-white rounded-md transition-all"><ChevronLeft size={16} /></button>
+          <span className="font-semibold text-slate-800 w-16 text-center text-sm">{selectedYear}</span>
+          <button onClick={() => setSelectedYear(selectedYear + 1)} className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-white rounded-md transition-all"><ChevronRight size={16} /></button>
         </div>
       </div>
 
@@ -232,7 +233,7 @@ export const BusinessObjectives: React.FC<{ selectedYear: number, setSelectedYea
           <p className="font-bold uppercase tracking-widest text-[10px] text-slate-400">Syncing Strategic Nodes...</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {quarters.map((q) => {
             const quarterKRs = krs.filter(kr => kr.quarter === q).sort((a, b) => a.label.localeCompare(b.label));
             const locked = isQuarterLocked(selectedYear, q);
@@ -240,47 +241,47 @@ export const BusinessObjectives: React.FC<{ selectedYear: number, setSelectedYea
             const canOverride = (currentUser?.role === 'SuperAdmin' || currentUser?.role === 'Admin') && isCurrentQuarter;
 
             return (
-              <div key={q} className="flex flex-col rounded-[4px] border bg-slate-50/20 border-slate-200/60 p-5 min-h-[500px]">
-                <div className="flex justify-between items-center mb-6">
-                  <span className="text-lg font-black text-slate-800">{q}</span>
+              <div key={q} className="flex flex-col rounded-xl border bg-slate-50 border-slate-200 p-4 min-h-[480px]">
+                <div className="flex justify-between items-center mb-4">
+                  <span className="text-base font-bold text-slate-800">{q}</span>
                   <div className="flex items-center gap-2">
                     {canOverride && (
                       <button
                         onClick={() => toggleQuarterLock(selectedYear, q, locked)}
-                        className={`p-1.5 rounded-[4px] transition-all border ${locked ? 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-white hover:text-emerald-600' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100'}`}
+                        className={`p-1.5 rounded-lg transition-all border ${locked ? 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-white hover:text-emerald-600' : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100'}`}
                         title={locked ? "Manually Unlock" : "Manually Lock"}
                       >
                         {locked ? <Lock size={12} /> : <DatabaseZap size={12} />}
                       </button>
                     )}
                     {!canOverride && locked && <Lock size={12} className="text-slate-400" />}
-                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{quarterKRs.length}/4 OBJECTIVES</span>
+                    <span className="text-xs font-semibold text-slate-400 uppercase">{quarterKRs.length}/4 OBJECTIVES</span>
                   </div>
                 </div>
-                <div className="space-y-4 flex-1">
+                <div className="space-y-3 flex-1">
                   {quarterKRs.map(kr => (
                     <div
                       key={kr.id}
-                      className={`group bg-white rounded-[4px] border border-slate-200 p-6 shadow-sm transition-all hover:shadow-md cursor-pointer ${locked ? 'opacity-80' : 'hover:border-primary-400'}`}
+                      className={`group bg-white rounded-lg border border-slate-200 p-4 shadow-sm transition-all hover:shadow-md cursor-pointer ${locked ? 'opacity-80' : 'hover:border-primary-400'}`}
                       onClick={() => setEditingKR(kr)}
                     >
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-[10px] font-black bg-primary-100 text-primary-700 px-2 py-1 rounded uppercase tracking-wider">{kr.label}</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold bg-primary-100 text-primary-700 px-2 py-1 rounded uppercase tracking-wide">{kr.label}</span>
                         {locked ? (
-                          <div className="p-1.5 text-slate-200"><Lock size={12} /></div>
+                          <div className="p-1 text-slate-300"><Lock size={12} /></div>
                         ) : (
-                          <button onClick={(e) => { e.stopPropagation(); handleDeleteKR(kr.id); }} className="p-1.5 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); handleDeleteKR(kr.id); }} className="p-1 text-slate-300 hover:text-rose-500"><Trash2 size={12} /></button>
                         )}
                       </div>
-                      <h4 className="font-bold text-sm leading-tight mb-3 text-slate-800">{kr.title}</h4>
-                      <div className="text-[11px] leading-relaxed line-clamp-3 text-slate-500" dangerouslySetInnerHTML={{ __html: kr.description || '' }} />
+                      <h4 className="font-semibold text-sm leading-tight mb-2 text-slate-800">{kr.title}</h4>
+                      <div className="text-xs leading-relaxed line-clamp-3 text-slate-500" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(kr.description || '') }} />
                     </div>
                   ))}
                 </div>
                 <button
                   onClick={() => setEditingKR({ year: selectedYear, quarter: q, title: '', owner_id: currentUser?.id || 'SYSTEM', description: '', label: 'KR' + (quarterKRs.length + 1) })}
                   disabled={locked}
-                  className={`mt-4 w-full flex items-center justify-center gap-2 py-3 border border-slate-200 rounded-[4px] text-[10px] font-bold uppercase tracking-widest transition-all ${locked ? 'opacity-50 cursor-not-allowed bg-slate-50 text-slate-300' : 'text-slate-500 hover:bg-white hover:text-primary-600'}`}
+                  className={`mt-4 w-full flex items-center justify-center gap-2 py-2.5 border border-slate-200 rounded-lg text-xs font-semibold uppercase tracking-wide transition-all ${locked ? 'opacity-50 cursor-not-allowed bg-slate-50 text-slate-300' : 'text-slate-500 hover:bg-white hover:text-primary-600'}`}
                 >
                   {locked ? <Lock size={14} /> : <Plus size={14} />} {locked ? 'Locked' : 'New KR Slot'}
                 </button>

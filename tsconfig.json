@@ -26,5 +26,17 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "vite-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "supabase/functions/**/*",
+    "supabase/**/*.ts",
+    "debug-supabase.ts",
+    "test-smtp*.ts"
+  ]
 }

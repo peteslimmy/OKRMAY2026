@@ -45,13 +45,30 @@ const checkPasswordBreach = async (password: string): Promise<boolean> => {
     const prefix = hashHex.slice(0, 5);
     const suffix = hashHex.slice(5);
 
-    const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`);
-    if (!response.ok) return false;
+    // Add timeout to prevent UI hang
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+    const response = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      // Network error but no breach detected - fail open with warning
+      console.warn('[SECURITY] Password breach check API unavailable, allowing password with warning');
+      return false;
+    }
 
     const text = await response.text();
     const lines = text.split('\n');
-    return lines.some(line => line.startsWith(suffix));
+    const found = lines.some(line => line.startsWith(suffix));
+    return found; // true = password is breached
   } catch {
+    // If timeout or network error, fail open with warning (not closed)
+    // This prevents locking users out during API outages
+    console.warn('[SECURITY] Password breach check failed - allowing with warning, check API availability');
     return false;
   }
 };
@@ -64,7 +81,12 @@ interface RateLimitState {
   lastAttempt: number;
 }
 
-export const Auth: React.FC = () => {
+interface AuthProps {
+  requirePasswordChange?: boolean;
+  onPasswordChanged?: () => void;
+}
+
+export const Auth: React.FC<AuthProps> = ({ requirePasswordChange, onPasswordChanged }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -82,24 +104,73 @@ export const Auth: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const [csrfToken, setCsrfToken] = useState(getOrCreateCSRFToken());
 
+  // Auto-trigger password change mode when required
+  useEffect(() => {
+    if (requirePasswordChange) {
+      setIsPasswordUpdateMode(true);
+    }
+  }, [requirePasswordChange]);
+
+  // Sign-up mode state
+  const [isSignUpMode, setIsSignUpMode] = useState(false);
+  const [signUpFirstName, setSignUpFirstName] = useState('');
+  const [signUpLastName, setSignUpLastName] = useState('');
+  const [signUpConfirmEmail, setSignUpConfirmEmail] = useState('');
+  const [signUpPassword, setSignUpPassword] = useState('');
+  const [signUpConfirmPassword, setSignUpConfirmPassword] = useState('');
+  const [signUpSuccess, setSignUpSuccess] = useState(false);
+
   const rateLimitRef = useRef<RateLimitState>({ attempts: 0, lockedUntil: null, lastAttempt: 0 });
 
   useEffect(() => {
+    // Check if we just completed password update (prevent re-entering update mode)
+    const justCompleted = sessionStorage.getItem('password_update_completed');
+    if (justCompleted) {
+      sessionStorage.removeItem('password_update_completed');
+      // Clear the URL hash completely
+      window.location.hash = '';
+      // Use history API to remove the hash without triggering a reload
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      return;
+    }
+
     // Method 1: Listen for Supabase's PASSWORD_RECOVERY auth event
     // This fires when the user clicks the email reset link and Supabase
     // establishes a temporary recovery session automatically
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setIsPasswordUpdateMode(true);
-        setIsForgotPasswordMode(false);
-        setResetEmailSent(false);
+        // Double check we're not in completed state
+        if (!sessionStorage.getItem('password_update_completed')) {
+          setIsPasswordUpdateMode(true);
+          setIsForgotPasswordMode(false);
+          setResetEmailSent(false);
+        }
       }
     });
 
-    // Method 2: Fallback — check URL hash directly (for custom/legacy tokens)
+    // Method 2: Check URL hash for recovery parameters
+    // Supabase includes access_token, refresh_token, and type=recovery in the hash
     const hash = window.location.hash;
     if (hash.includes('type=recovery') || hash.includes('type%3Drecovery')) {
       setIsPasswordUpdateMode(true);
+
+      // Extract tokens from URL hash and set session
+      const params = new URLSearchParams(hash.substring(1)); // Remove the # character
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (accessToken) {
+        supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || ''
+        }).then(({ error }) => {
+          if (error) {
+            console.error('Error setting session:', error);
+          }
+        });
+      }
     }
 
     return () => subscription.unsubscribe();
@@ -196,16 +267,74 @@ export const Auth: React.FC = () => {
     }
 
     try {
+      // Check if we have a valid session for password update
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+      }
+
+      if (!session) {
+        console.error('No session found for password update');
+        setError('Password reset session expired. Please request a new reset link.');
+        setLoading(false);
+        return;
+      }
+
+      console.log('Updating password for user');
+
       const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword
       });
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Password update error:', updateError);
+        throw updateError;
+      }
 
+      console.log('Password updated successfully');
+
+      // Sign out the user to clear the recovery session
+      await supabase.auth.signOut();
+
+      // Clear ALL storage to ensure fresh session
+      sessionStorage.clear();
+      localStorage.removeItem('4CORE_simulated_user');
+      localStorage.removeItem('4CORE_user_cache');
+
+      // Mark password update as completed to prevent re-entering update mode
+      sessionStorage.setItem('password_update_completed', 'true');
+
+      // Clear the URL hash using history API
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+      window.location.hash = '';
+
+      // Redirect to home/login page after successful password update
       setPasswordUpdateSuccess(true);
+
+      // Call callback if provided (for forced password change)
+      if (onPasswordChanged) {
+        onPasswordChanged();
+      }
+
+      // Auto-redirect to login after 2 seconds with a clean URL
+      setTimeout(() => {
+        // Hard redirect to clear all state
+        window.location.href = window.location.pathname;
+      }, 2000);
+
       await logAudit('SYSTEM', 'Password updated successfully');
     } catch (err: any) {
-      setError('Failed to update security key. Please try again.');
+      console.error('Password update failed:', err);
+      if (err.message?.includes('session') || err.message?.includes('token')) {
+        setError('Password reset session expired. Please request a new reset link.');
+      } else if (err.message?.includes('same password')) {
+        setError('New password must be different from your current password.');
+      } else {
+        setError('Failed to update security key. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -229,24 +358,63 @@ export const Auth: React.FC = () => {
       return;
     }
 
+    // Validate email format before sending
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    // SECURITY: Remove client-side rate limiting that can be bypassed
+    // Server-side rate limiting is enforced in the edge function
+    // This prevents attackers from clearing sessionStorage to bypass limits
+
     setLoading(true);
     setError(null);
 
+    // SECURITY: Always show success to prevent email enumeration
+    // Whether the email exists or not, show the same message
+    const showGenericSuccess = () => {
+      setResetEmailSent(true);
+      setLoading(false);
+    };
+
     try {
-      // Use Supabase's built-in password reset
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+
+      // Use Supabase's built-in password reset (requires SMTP configured in Supabase Dashboard)
+      // Or use edge function with env vars for SMTP
+      // Note: We don't check the result here to prevent email enumeration
+      // The server-side will handle rate limiting and existence checks
+      await supabase.auth.resetPasswordForEmail(
         trimmedEmail,
         {
           redirectTo: `${window.location.origin}${window.location.pathname}`
         }
       );
 
-      if (resetError) {
-        console.error('Reset error:', resetError.message);
+      // Try edge function as fallback - it uses SMTP from environment variables
+      // Don't check response to prevent enumeration - always show success
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: trimmedEmail,
+            generateResetLink: true,
+            redirectTo: `${window.location.origin}${window.location.pathname}`
+          }),
+        });
+      } catch (edgeError) {
+        // Silently ignore edge function errors - don't reveal details to client
+        console.log('Edge function fallback attempted');
       }
 
-      // Always show sent screen to prevent email enumeration attacks
-      setResetEmailSent(true);
+      // Always show success regardless of whether email exists
+      // This prevents email enumeration attacks
+      showGenericSuccess();
 
       // Try to log (may fail due to RLS, that's OK)
       try {
@@ -256,11 +424,319 @@ export const Auth: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Forgot password error:', err);
-      setError('Unable to process request. Please try again later.');
+      // Still show success to prevent email enumeration
+      showGenericSuccess();
+    }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedConfirmEmail = signUpConfirmEmail.trim().toLowerCase();
+
+    // Validation
+    if (!signUpFirstName.trim() || !signUpLastName.trim()) {
+      setError('Please enter your full name.');
+      return;
+    }
+
+    if (!trimmedEmail || !trimmedConfirmEmail) {
+      setError('Please enter your email address.');
+      return;
+    }
+
+    if (trimmedEmail !== trimmedConfirmEmail) {
+      setError('Email addresses do not match.');
+      return;
+    }
+
+    if (!signUpPassword || !signUpConfirmPassword) {
+      setError('Please enter and confirm your password.');
+      return;
+    }
+
+    if (signUpPassword !== signUpConfirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+
+    const strength = validatePassword(signUpPassword);
+    if (!strength.valid) {
+      setError(`Password requirements: ${strength.errors.join(', ')}`);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // Check password breach
+    setIsCheckingBreach(true);
+    const isBreached = await checkPasswordBreach(signUpPassword);
+    setIsCheckingBreach(false);
+
+    if (isBreached) {
+      setError('This password has been exposed in data breaches. Please choose a different one.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // Create the user with Supabase Auth
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: trimmedEmail,
+        password: signUpPassword,
+        options: {
+          data: {
+            first_name: signUpFirstName.trim(),
+            last_name: signUpLastName.trim(),
+            full_name: `${signUpFirstName.trim()} ${signUpLastName.trim()}`
+          }
+        }
+      });
+
+      if (signUpError) {
+        console.error('Sign up error:', signUpError);
+        if (signUpError.message.includes('already registered') || signUpError.message.includes('already been used')) {
+          setError('An account with this email already exists.');
+        } else {
+          setError(signUpError.message || 'Failed to create account.');
+        }
+        setLoading(false);
+        return;
+      }
+
+      if (data.user) {
+        // Create a profile record for the user
+        try {
+          const newProfile = {
+            id: data.user.id,
+            firstName: signUpFirstName.trim(),
+            lastName: signUpLastName.trim(),
+            name: `${signUpFirstName.trim()} ${signUpLastName.trim()}`,
+            email: trimmedEmail,
+            role: 'Viewer', // Default role for new users
+            department: 'UNASSIGNED',
+            status: 'Active',
+            mustChangePassword: false,
+            avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(signUpFirstName)}+${encodeURIComponent(signUpLastName)}&background=f97316&color=fff&size=64&bold=true`
+          };
+
+          await supabase.from('profiles').insert([newProfile]);
+
+          // Try to log the registration
+          try {
+            await logAudit('CREATE', `New identity registered: ${maskEmail(trimmedEmail)}`);
+          } catch (auditErr) {
+            console.log('Audit log skipped:', auditErr);
+          }
+        } catch (profileError) {
+          console.error('Profile creation error:', profileError);
+          // Continue anyway - the user was created in Auth
+        }
+
+        // Show success and switch to sign-in mode
+        setSignUpSuccess(true);
+        setIsSignUpMode(false);
+
+        // Reset form
+        setEmail('');
+        setSignUpFirstName('');
+        setSignUpLastName('');
+        setSignUpConfirmEmail('');
+        setSignUpPassword('');
+        setSignUpConfirmPassword('');
+      }
+    } catch (err: any) {
+      console.error('Sign up failed:', err);
+      setError(err.message || 'Failed to create account. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (signUpSuccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #dde1f5 0%, #c8ccee 40%, #d4c9f0 100%)' }}>
+        <div className="w-full max-w-sm">
+          <div className="bg-white rounded-3xl shadow-2xl shadow-indigo-200/60 px-8 pt-10 pb-8 text-center">
+            <div className="flex justify-center mb-6">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
+                <CheckCircle size={30} className="text-white" />
+              </div>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-800 mb-2">Account Created!</h1>
+            <p className="text-sm text-slate-500 mb-8">Your account has been created successfully. You can now sign in with your credentials.</p>
+            <button
+              onClick={() => { setSignUpSuccess(false); setEmail(''); setPassword(''); }}
+              className="w-full h-12 rounded-2xl text-white text-sm font-bold tracking-wide shadow-lg transition-opacity flex items-center justify-center"
+              style={{ background: 'linear-gradient(90deg, #5b8dee 0%, #7c5cbf 100%)' }}
+            >
+              Go to Sign In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isSignUpMode) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #dde1f5 0%, #c8ccee 40%, #d4c9f0 100%)' }}>
+        <div className="w-full max-w-sm">
+          <div className="bg-white rounded-3xl shadow-2xl shadow-indigo-200/60 px-8 pt-10 pb-8">
+            <div className="flex justify-center mb-6">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)' }}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <line x1="19" y1="8" x2="19" y2="14" />
+                  <line x1="22" y1="11" x2="16" y2="11" />
+                </svg>
+              </div>
+            </div>
+            <div className="text-center mb-6">
+              <h1 className="text-2xl font-bold text-slate-800 mb-1">Create Account</h1>
+              <p className="text-sm" style={{ color: '#6366f1' }}>Join 4CORE Governance</p>
+            </div>
+            <form onSubmit={handleSignUp} className="space-y-4">
+              {/* First Name */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">First Name</label>
+                <input
+                  type="text"
+                  value={signUpFirstName}
+                  onChange={(e) => setSignUpFirstName(e.target.value)}
+                  required
+                  autoComplete="given-name"
+                  placeholder="John"
+                  className="w-full h-12 bg-white border-2 border-indigo-100 rounded-2xl px-4 text-sm text-slate-700 font-medium outline-none focus:border-indigo-400 transition-colors placeholder:text-indigo-200"
+                />
+              </div>
+
+              {/* Last Name */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Last Name</label>
+                <input
+                  type="text"
+                  value={signUpLastName}
+                  onChange={(e) => setSignUpLastName(e.target.value)}
+                  required
+                  autoComplete="family-name"
+                  placeholder="Doe"
+                  className="w-full h-12 bg-white border-2 border-indigo-100 rounded-2xl px-4 text-sm text-slate-700 font-medium outline-none focus:border-indigo-400 transition-colors placeholder:text-indigo-200"
+                />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="you@email.com"
+                  className="w-full h-12 bg-white border-2 border-indigo-100 rounded-2xl px-4 text-sm text-slate-700 font-medium outline-none focus:border-indigo-400 transition-colors placeholder:text-indigo-200"
+                />
+              </div>
+
+              {/* Confirm Email */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Confirm Email</label>
+                <input
+                  type="email"
+                  value={signUpConfirmEmail}
+                  onChange={(e) => setSignUpConfirmEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                  placeholder="you@email.com"
+                  className="w-full h-12 bg-white border-2 border-indigo-100 rounded-2xl px-4 text-sm text-slate-700 font-medium outline-none focus:border-indigo-400 transition-colors placeholder:text-indigo-200"
+                />
+              </div>
+
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={signUpPassword}
+                    onChange={(e) => setSignUpPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                    className="w-full h-12 bg-white border-2 border-indigo-100 rounded-2xl px-4 pr-11 text-sm text-indigo-400 font-medium outline-none focus:border-indigo-400 focus:ring-0 transition-colors placeholder:text-indigo-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-indigo-300 hover:text-indigo-500 transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+                {signUpPassword && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {['8+ chars', 'uppercase', 'lowercase', 'number', 'special'].map((req, i) => {
+                      const checks = [signUpPassword.length >= 8, /[A-Z]/.test(signUpPassword), /[a-z]/.test(signUpPassword), /[0-9]/.test(signUpPassword), /[^A-Za-z0-9]/.test(signUpPassword)];
+                      return <span key={i} className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${checks[i] ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{req}</span>;
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">Confirm Password</label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={signUpConfirmPassword}
+                  onChange={(e) => setSignUpConfirmPassword(e.target.value)}
+                  required
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                  className="w-full h-12 bg-white border-2 border-indigo-100 rounded-2xl px-4 text-sm text-indigo-400 font-medium outline-none focus:border-indigo-400 focus:ring-0 transition-colors placeholder:text-indigo-300"
+                />
+              </div>
+
+              {/* Error */}
+              {error && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
+                  <AlertCircle className="text-red-500 shrink-0" size={15} />
+                  <p className="text-red-600 text-xs font-medium">{error}</p>
+                </div>
+              )}
+
+              {/* Sign up button */}
+              <button
+                type="submit"
+                disabled={loading || isCheckingBreach}
+                className="w-full h-12 rounded-2xl text-white text-sm font-bold tracking-wide shadow-lg transition-opacity disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
+                style={{ background: 'linear-gradient(90deg, #5b8dee 0%, #7c5cbf 100%)' }}
+              >
+                {loading || isCheckingBreach ? <LoaderCircle className="animate-spin" size={18} /> : 'Create Account'}
+              </button>
+            </form>
+
+            {/* Footer */}
+            <p className="text-center text-sm mt-6" style={{ color: '#94a3b8' }}>
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => { setIsSignUpMode(false); setError(null); setEmail(''); setSignUpFirstName(''); setSignUpLastName(''); setSignUpConfirmEmail(''); setSignUpPassword(''); setSignUpConfirmPassword(''); }}
+                className="font-bold hover:underline transition-colors"
+                style={{ color: '#6366f1' }}
+              >
+                Sign in
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (passwordUpdateSuccess) {
     return (
@@ -273,13 +749,16 @@ export const Auth: React.FC = () => {
               </div>
             </div>
             <h1 className="text-2xl font-bold text-slate-800 mb-2">Password Updated!</h1>
-            <p className="text-sm text-slate-500 mb-8">Your security key has been updated. You may now sign in with your new credentials.</p>
+            <p className="text-sm text-slate-500 mb-4">Your security key has been updated. Redirecting to login...</p>
+            <div className="flex justify-center mb-4">
+              <LoaderCircle className="w-6 h-6 text-indigo-500 animate-spin" />
+            </div>
             <button
               onClick={() => { setIsPasswordUpdateMode(false); setPasswordUpdateSuccess(false); setNewPassword(''); setConfirmPassword(''); window.location.hash = ''; }}
               className="w-full h-12 rounded-2xl text-white text-sm font-bold tracking-wide shadow-lg transition-opacity flex items-center justify-center"
               style={{ background: 'linear-gradient(90deg, #5b8dee 0%, #7c5cbf 100%)' }}
             >
-              Back to Sign In
+              Go to Sign In Now
             </button>
           </div>
         </div>
@@ -319,10 +798,17 @@ export const Auth: React.FC = () => {
                 </div>
                 {passwordStrength && (
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {['8+ chars', 'uppercase', 'lowercase', 'number', 'special'].map((req, i) => {
-                      const checks = [newPassword.length >= 8, /[A-Z]/.test(newPassword), /[a-z]/.test(newPassword), /[0-9]/.test(newPassword), /[^A-Za-z0-9]/.test(newPassword)];
-                      return <span key={i} className={`text-[9px] px-2 py-0.5 rounded-full font-medium ${checks[i] ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{req}</span>;
-                    })}
+                    {passwordStrength.valid ? (
+                      <div className="flex items-center gap-1 text-emerald-600 text-xs font-medium">
+                        <CheckCircle size={14} /> Password meets all requirements
+                      </div>
+                    ) : (
+                      passwordStrength.errors.map((err, idx) => (
+                        <span key={idx} className="text-[9px] px-2 py-0.5 rounded-full font-medium bg-rose-100 text-rose-600 flex items-center gap-1">
+                          <AlertCircle size={10} /> {err}
+                        </span>
+                      ))
+                    )}
                   </div>
                 )}
               </div>
@@ -355,6 +841,14 @@ export const Auth: React.FC = () => {
             <p className="text-center text-sm mt-6">
               <button type="button" onClick={() => { setIsPasswordUpdateMode(false); window.location.hash = ''; }} className="font-bold flex items-center justify-center gap-1 mx-auto hover:opacity-70 transition-opacity" style={{ color: '#6366f1' }}>
                 <ArrowLeft size={13} /> Back to Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsPasswordUpdateMode(false); setIsSignUpMode(true); setError(null); }}
+                className="font-bold flex items-center justify-center gap-1 mx-auto hover:opacity-70 transition-opacity mt-2"
+                style={{ color: '#6366f1' }}
+              >
+                Or sign up
               </button>
             </p>
           </div>
@@ -438,6 +932,14 @@ export const Auth: React.FC = () => {
                 style={{ color: '#6366f1' }}
               >
                 <ArrowLeft size={13} /> Back to Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsForgotPasswordMode(false); setIsSignUpMode(true); setError(null); }}
+                className="font-bold flex items-center justify-center gap-1 mx-auto hover:opacity-70 transition-opacity mt-2"
+                style={{ color: '#6366f1' }}
+              >
+                Or sign up
               </button>
             </p>
           </div>
@@ -549,7 +1051,14 @@ export const Auth: React.FC = () => {
           {/* Footer */}
           <p className="text-center text-sm mt-6" style={{ color: '#94a3b8' }}>
             Don't have an account?{' '}
-            <span className="font-bold" style={{ color: '#6366f1' }}>Contact Admin</span>
+            <button
+              type="button"
+              onClick={() => { setIsSignUpMode(true); setError(null); }}
+              className="font-bold hover:underline transition-colors"
+              style={{ color: '#6366f1' }}
+            >
+              Sign up
+            </button>
           </p>
         </div>
       </div>

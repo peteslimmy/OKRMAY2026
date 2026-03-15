@@ -23,59 +23,26 @@ export enum TaskStatus {
   NotDone = 'NotDone'
 }
 
-// FR-SMTP-1.1: Encryption Types
-export enum EncryptionType {
-  None = 'None',
-  SSL_TLS = 'SSL/TLS',
-  STARTTLS = 'STARTTLS'
-}
-
-// FR-SMTP-1.1: SMTP Config Interface
-export interface SMTPConfig {
-  host: string;
-  port: number;
-  encryption: EncryptionType;
-  username: string;
-  password?: string; 
-}
-
-// FR-MSG-2.1: Email Triggers
-export enum EmailTriggerType {
-  ContentLockWarning = 'Content Lock Warning',
-  FinalLockWarning = 'Final Status Lock Warning',
-  WelcomeUser = 'New User Welcome',
-  PasswordReset = 'Password Reset'
-}
-
-// FR-MSG-2.1: Email Template Interface
-export interface EmailTemplate {
-  id: string;
-  trigger: EmailTriggerType;
-  name: string;
-  subject: string;
-  body: string; // HTML string
-}
-
 export interface User {
   id: string;
   auth_id?: string; // Link to Supabase Auth
-  firstName: string; 
-  lastName: string;  
-  name: string;      
+  firstName: string;
+  lastName: string;
+  name: string;
   email: string;
   role: UserRole;
   department: string;
   avatarUrl: string;
-  status: UserStatus; 
-  // Password stored for local/demo purposes or initial setup
-  password?: string; 
-  mustChangePassword?: boolean; 
+  status: UserStatus;
+  // DEPRECATED: mustChangePassword retained for auth flow compatibility
+  // Password field removed - use Supabase Auth instead
+  mustChangePassword?: boolean;
 }
 
 export interface BusinessUnit {
   id: string;
   name: string;
-  head_user_id?: string; 
+  head_user_id?: string;
   contactEmail?: string;
 }
 
@@ -83,11 +50,11 @@ export interface KeyResult {
   id: string;
   title: string;
   description?: string;
-  quarter: string; 
+  quarter: string;
   year: number;
-  label: string; 
-  owner_id: string; 
-  progress: number; 
+  label: string;
+  owner_id: string;
+  progress: number;
   status: 'Green' | 'Amber' | 'Red';
 }
 
@@ -99,15 +66,15 @@ export interface Task {
 
 export interface Activity {
   id: string;
-  key_result_id: string; 
+  key_result_id: string;
   owner_id: string;      // Traceable ownership
   department: string;    // Data isolation anchor
   title: string;
   tasks: Task[];
-  comments?: string; 
+  comments?: string;
   week: number;
   year: number;
-  score: number; 
+  score: number;
 }
 
 export interface KPICardProps {
@@ -132,17 +99,78 @@ export interface AuditLogEntry {
 export interface BUPerformanceDataPoint {
   week: string;
   totalCompanyScore: number;
-  [buName: string]: number | string; 
+  [buName: string]: number | string;
 }
 
 export interface StrategicNote {
   id: string;
-  week: string; 
+  week: string;
   year: number;
-  title: string; 
-  content: string; 
-  timestamp: string; 
-  owner_id: string; 
+  title: string;
+  content: string;
+  timestamp: string;
+  owner_id: string;
+}
+
+// ============================================================================
+// Finance Module Types (FR-FINANCE)
+// ============================================================================
+export interface Violation {
+  id: string;
+  name: string;
+  department: string;
+  amount: number;
+  date: string;
+  paid: boolean;
+}
+
+export interface Contribution {
+  id: string;
+  donorName: string;
+  amount: number;
+  date: string;
+  anonymous: boolean;
+}
+
+export interface Expense {
+  id: string;
+  amount: number;
+  description: string;
+  category: string;
+  requestor: string;
+  approver: string;
+  receiver: string;
+  date: string;
+  receiptUrl?: string;
+}
+
+export interface MonthlyFinancialSummary {
+  id: string;
+  month: number;
+  year: number;
+  total_income: number;
+  total_expenses: number;
+}
+
+// ============================================================================
+// Attendance Module Types (FR-ATTENDANCE)
+// ============================================================================
+export enum AttendanceStatus {
+  Present = 'Present',
+  Remote = 'Remote',
+  Absent = 'Absent',
+  Excused = 'Excused'
+}
+
+export interface AttendanceRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  department: string;
+  status: AttendanceStatus;
+  timeJoined: string | null;
+  participationScore: number;
 }
 
 export let ALLOWED_DOMAINS = ['novaai.com.ng', 'fcis.com', 'pee.com'];

@@ -1,7 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { updateUserRoleByEmail } from './utils'; // Import the utility function
+
+window.addEventListener('error', (event) => {
+  console.error('[GLOBAL_ERROR]', event.error);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[UNHANDLED_REJECTION]', event.reason);
+});
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -15,11 +22,3 @@ root.render(
   </React.StrictMode>
 );
 
-// Expose utility functions globally for easier debugging in the console
-declare global {
-  interface Window {
-    updateUserRoleByEmail: typeof updateUserRoleByEmail;
-    // Add other utility functions you might need to debug globally here
-  }
-}
-window.updateUserRoleByEmail = updateUserRoleByEmail;

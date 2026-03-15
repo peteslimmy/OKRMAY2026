@@ -25,5 +25,15 @@ dist-ssr
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
 *.sw?
+
+# Debug and test files
+debug-supabase.ts
+debug-test.html
+test-smtp.js
+test-smtp-deno.ts
+dev_output.txt
+dev_output_2.txt
+.tsc_output.txt
+nul
+test-results/

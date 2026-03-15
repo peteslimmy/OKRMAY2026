@@ -1,5 +1,5 @@
 
-import { Task, TaskStatus, UserRole, UserStatus, AuditLogEntry, User, BusinessUnit, KeyResult, Activity, BUPerformanceDataPoint, StrategicNote, ALLOWED_DOMAINS as BASE_DOMAINS } from './types';
+import { Task, TaskStatus, UserRole, UserStatus, AuditLogEntry, User, BusinessUnit, KeyResult, Activity, BUPerformanceDataPoint, StrategicNote, ALLOWED_DOMAINS as BASE_DOMAINS, Violation, Contribution, Expense, MonthlyFinancialSummary, AttendanceRecord } from './types';
 import { supabase } from './supabaseClient';
 
 export let ALLOWED_DOMAINS: string[] = [...BASE_DOMAINS];
@@ -24,6 +24,7 @@ const CACHE: {
 };
 
 const STALE_TIME = 30000; // 30 seconds cache TTL for high-frequency data
+let hasSeededDatabase = false; // Optimization: prevent repeated seeding checks
 
 const isCacheValid = (key: keyof typeof CACHE) => {
   return CACHE[key].data !== null && (Date.now() - CACHE[key].lastFetch < STALE_TIME);
@@ -57,7 +58,11 @@ export const HARDCODED_2026_KRS: KeyResult[] = [
 ];
 
 export const seedDatabase = async () => {
-  // Skip seeding if not authenticated (RLS will block anyway)
+  // Optimization: Skip if already seeded in this session
+  if (hasSeededDatabase) {
+    return;
+  }
+
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -67,7 +72,6 @@ export const seedDatabase = async () => {
 
     const allKRs = [...HARDCODED_2025_KRS, ...HARDCODED_2026_KRS];
 
-    // Check if KRs exist
     const { count, error: countError } = await supabase
       .from('key_results')
       .select('*', { count: 'exact', head: true });
@@ -77,11 +81,16 @@ export const seedDatabase = async () => {
       return;
     }
 
-    if (count === 0) {
+    if (!count || count === 0) {
       console.log("Seeding Key Results...");
       const { error } = await supabase.from('key_results').insert(allKRs);
       if (error) console.error("Seeding Error:", error);
-      else console.log("Key Results Seeded Successfully.");
+      else {
+        console.log("Key Results Seeded Successfully.");
+        hasSeededDatabase = true; // Mark as seeded to prevent repeated checks
+      }
+    } else {
+      hasSeededDatabase = true; // Already seeded, skip future checks
     }
   } catch (e) {
     console.error("Seeding Exception:", e);
@@ -201,39 +210,76 @@ export const getStoredUsers = getRegistryUsers;
 
 export const saveStoredUsers = async (users: User[]) => {
   try {
-    await supabase.from('profiles').upsert(users);
-    // Invalidate users cache to force fresh fetch on next call
+    const { error } = await supabase.from('profiles').upsert(users);
+    if (error) {
+      console.error('[AUTH_ERROR] Failed to save users:', error);
+    }
     CACHE.users.data = null;
     CACHE.users.lastFetch = 0;
-  } catch (e) { }
+  } catch (e) {
+    console.error('[AUTH_ERROR] Exception saving users:', e);
+  }
   window.dispatchEvent(new Event('4COREUserUpdate'));
 };
 
 export const getSimulatedUser = (): User | null => {
+  // DEFENSE IN DEPTH: Use AND logic to ensure simulation is disabled in production
+  // Even if __SIMULATION_ENABLED__ is somehow manipulated, PROD flag provides backup
+  if (!__SIMULATION_ENABLED__ && import.meta.env.PROD) {
+    return null; // Safe: simulation disabled in production
+  }
+
+  // Additional runtime safety check
+  if (import.meta.env.PROD) {
+    console.warn('[SECURITY] Simulation access blocked in production environment');
+    return null;
+  }
+
   const simulated = localStorage.getItem('4CORE_simulated_user');
   return simulated ? JSON.parse(simulated) : null;
 };
 
-export const setSimulatedUser = (user: User | null) => {
+export const setSimulatedUser = (user: User | null): void => {
+  // DEFENSE IN DEPTH: Use AND logic to ensure simulation is disabled in production
+  if (!__SIMULATION_ENABLED__ && import.meta.env.PROD) {
+    return; // Safe: simulation disabled in production
+  }
+
+  // Additional runtime safety check
+  if (import.meta.env.PROD) {
+    console.warn('[SECURITY] Simulation modification blocked in production environment');
+    return;
+  }
+
   if (user) localStorage.setItem('4CORE_simulated_user', JSON.stringify(user));
   else localStorage.removeItem('4CORE_simulated_user');
   window.dispatchEvent(new Event('4COREUserUpdate'));
 };
 
 export const getSessionUser = async (): Promise<User | null> => {
-  // SECURITY: Simulation bypass for development/testing
-  const hostname = window.location.hostname;
-  const isDev = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost');
-  const simulated = getSimulatedUser();
-  if (simulated && isDev) return simulated;
+  // DEFENSE IN DEPTH: Check production FIRST - simulation not allowed in production
+  if (import.meta.env.PROD) {
+    console.warn('[SECURITY] Simulation access blocked in production environment');
+  } else {
+    // Only allow simulated users in non-production
+    const simulated = getSimulatedUser();
+    if (simulated) return simulated;
+  }
 
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      console.error('[AUTH_ERROR] Session error:', sessionError);
+    }
+
     if (session?.user) {
       const { data, error } = await supabase.from('profiles').select('*').eq('auth_id', session.user.id).single();
+      if (error && error.code !== 'PGRST116') {
+        console.error('[AUTH_ERROR] Profile fetch error:', error);
+      }
+
       if (data) return data as User;
 
-      // If no profile exists, create a default one
       if (error && error.code === 'PGRST116') {
         const newUser: User = {
           id: generateLocalUUID(),
@@ -247,11 +293,16 @@ export const getSessionUser = async (): Promise<User | null> => {
           avatarUrl: `https://ui-avatars.com/api/?name=${session.user.email || 'User'}&background=random`,
           status: UserStatus.Active
         };
-        await supabase.from('profiles').insert([newUser]);
+        const { error: insertError } = await supabase.from('profiles').insert([newUser]);
+        if (insertError) {
+          console.error('[AUTH_ERROR] Profile creation error:', insertError);
+        }
         return newUser;
       }
     }
-  } catch (e) { }
+  } catch (e) {
+    console.error('[AUTH_ERROR] Exception in getSessionUser:', e);
+  }
 
   return null;
 };
@@ -814,5 +865,239 @@ export const formatWATDate = (d: Date) => d.toLocaleDateString('en-US', { month:
 
 export const generateReportId = (department: string, week: number, year: number) => {
   return `${department.toUpperCase().replace(/\s+/g, '-')}-WEEK-${week.toString().padStart(2, '0')}`;
+};
+
+// ============================================================================
+// Finance Module Database Operations (FR-FINANCE)
+// ============================================================================
+
+// Violations (Phone Fines)
+export const getViolations = async (): Promise<Violation[]> => {
+  try {
+    const { data, error } = await supabase.from('violations').select('*').order('date', { ascending: false });
+    if (error) throw error;
+    return (data as Violation[]) || [];
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to fetch violations:', e);
+    return [];
+  }
+};
+
+export const addViolation = async (v: Violation): Promise<boolean> => {
+  try {
+    // Validate amount is a positive number
+    if (typeof v.amount !== 'number' || v.amount <= 0) {
+      console.error('[FINANCE_ERROR] Amount must be a positive number');
+      return false;
+    }
+    const { error } = await supabase.from('violations').insert([{
+      id: v.id,
+      name: v.name,
+      department: v.department,
+      amount: v.amount,
+      date: v.date,
+      paid: v.paid
+    }]);
+    if (error) throw error;
+    logAudit('CREATE', `Violation added: ${v.name} - ₦${v.amount}`);
+    return true;
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to add violation:', e);
+    return false;
+  }
+};
+
+export const updateViolation = async (id: string, paid: boolean): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('violations').update({ paid }).eq('id', id);
+    if (error) throw error;
+    logAudit('UPDATE', `Violation ${id} status changed to ${paid ? 'Paid' : 'Unpaid'}`);
+    return true;
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to update violation:', e);
+    return false;
+  }
+};
+
+// Contributions (Donations)
+export const getContributions = async (): Promise<Contribution[]> => {
+  try {
+    const { data, error } = await supabase.from('contributions').select('*').order('date', { ascending: false });
+    if (error) throw error;
+    // Map donor_name to donorName for compatibility
+    return (data as any[]).map(c => ({
+      id: c.id,
+      donorName: c.donor_name,
+      amount: c.amount,
+      date: c.date,
+      anonymous: c.anonymous
+    })) || [];
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to fetch contributions:', e);
+    return [];
+  }
+};
+
+export const addContribution = async (c: Contribution): Promise<boolean> => {
+  try {
+    // Validate amount is a positive number
+    if (typeof c.amount !== 'number' || c.amount <= 0) {
+      console.error('[FINANCE_ERROR] Amount must be a positive number');
+      return false;
+    }
+    const { error } = await supabase.from('contributions').insert([{
+      id: c.id,
+      donor_name: c.donorName,
+      amount: c.amount,
+      date: c.date,
+      anonymous: c.anonymous
+    }]);
+    if (error) throw error;
+    logAudit('CREATE', `Contribution added: ${c.anonymous ? 'Anonymous' : c.donorName} - ₦${c.amount}`);
+    return true;
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to add contribution:', e);
+    return false;
+  }
+};
+
+// Expenses
+export const getExpenses = async (): Promise<Expense[]> => {
+  try {
+    const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
+    if (error) throw error;
+    // Map receipt_url to receiptUrl for compatibility
+    return (data as any[]).map(e => ({
+      id: e.id,
+      amount: e.amount,
+      description: e.description,
+      category: e.category,
+      requestor: e.requestor,
+      approver: e.approver || '',
+      receiver: e.receiver || '',
+      date: e.date,
+      receiptUrl: e.receipt_url
+    })) || [];
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to fetch expenses:', e);
+    return [];
+  }
+};
+
+export const addExpense = async (e: Expense): Promise<boolean> => {
+  try {
+    // Validate amount is a positive number
+    if (typeof e.amount !== 'number' || e.amount <= 0) {
+      console.error('[FINANCE_ERROR] Amount must be a positive number');
+      return false;
+    }
+    const { error } = await supabase.from('expenses').insert([{
+      id: e.id,
+      amount: e.amount,
+      description: e.description,
+      category: e.category,
+      requestor: e.requestor,
+      approver: e.approver,
+      receiver: e.receiver,
+      date: e.date,
+      receipt_url: e.receiptUrl
+    }]);
+    if (error) throw error;
+    logAudit('CREATE', `Expense added: ${e.category} - ₦${e.amount}`);
+    return true;
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to add expense:', e);
+    return false;
+  }
+};
+
+// Monthly Financial Summary (for charts)
+export const getMonthlyFinancialSummary = async (): Promise<MonthlyFinancialSummary[]> => {
+  try {
+    const { data, error } = await supabase.from('monthly_financial_summary').select('*').order('year', { ascending: true }).order('month', { ascending: true });
+    if (error) throw error;
+    return (data as MonthlyFinancialSummary[]) || [];
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to fetch monthly summary:', e);
+    return [];
+  }
+};
+
+export const updateMonthlyFinancialSummary = async (month: number, year: number, totalIncome: number, totalExpenses: number): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('monthly_financial_summary').upsert({
+      month,
+      year,
+      total_income: totalIncome,
+      total_expenses: totalExpenses,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'month,year' });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error('[FINANCE_ERROR] Failed to update monthly summary:', e);
+    return false;
+  }
+};
+
+// ============================================================================
+// Attendance Module Database Operations (FR-ATTENDANCE)
+// ============================================================================
+
+export const getAttendanceRecords = async (date?: string): Promise<AttendanceRecord[]> => {
+  try {
+    let query = supabase.from('attendance').select('*').order('meeting_date', { ascending: false });
+
+    if (date) {
+      query = query.eq('meeting_date', date);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return (data as AttendanceRecord[]) || [];
+  } catch (e) {
+    console.error('[ATTENDANCE_ERROR] Failed to fetch attendance records:', e);
+    return [];
+  }
+};
+
+export const addAttendanceRecord = async (record: AttendanceRecord): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('attendance').insert([{
+      id: record.id,
+      user_id: record.userId,
+      user_name: record.userName,
+      user_avatar: record.userAvatar,
+      department: record.department,
+      status: record.status,
+      time_joined: record.timeJoined,
+      participation_score: record.participationScore,
+      meeting_date: new Date().toISOString().split('T')[0]
+    }]);
+    if (error) throw error;
+    logAudit('CREATE', `Attendance record added for ${record.userName}`);
+    return true;
+  } catch (e) {
+    console.error('[ATTENDANCE_ERROR] Failed to add attendance record:', e);
+    return false;
+  }
+};
+
+export const updateAttendanceRecord = async (id: string, updates: Partial<AttendanceRecord>): Promise<boolean> => {
+  try {
+    const updateData: any = { updated_at: new Date().toISOString() };
+    if (updates.status) updateData.status = updates.status;
+    if (updates.timeJoined) updateData.time_joined = updates.timeJoined;
+    if (updates.participationScore) updateData.participation_score = updates.participationScore;
+
+    const { error } = await supabase.from('attendance').update(updateData).eq('id', id);
+    if (error) throw error;
+    logAudit('UPDATE', `Attendance record ${id} updated`);
+    return true;
+  } catch (e) {
+    console.error('[ATTENDANCE_ERROR] Failed to update attendance record:', e);
+    return false;
+  }
 };
 

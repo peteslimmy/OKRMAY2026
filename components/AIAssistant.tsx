@@ -1,6 +1,5 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
 import { Zap, X, Send, Bot, User, LoaderCircle, Globe, ExternalLink, ShieldCheck, Database, BrainCircuit } from 'lucide-react';
 import { logAudit, getSessionUser, getRegistryKeyResults } from '../utils';
 import { supabase } from '../supabaseClient';
@@ -39,8 +38,28 @@ export const AIAssistant: React.FC = () => {
     }
   };
 
+  const validateQuery = (query: string): boolean => {
+    if (!query || query.trim().length === 0) {
+      return false;
+    }
+    if (query.trim().length < 3) {
+      setMessages(prev => [...prev, { role: 'ai', text: 'Query too short. Please provide at least 3 characters.' }]);
+      return false;
+    }
+    if (query.trim().length > 1000) {
+      setMessages(prev => [...prev, { role: 'ai', text: 'Query too long. Please limit to 1000 characters.' }]);
+      return false;
+    }
+    return true;
+  };
+|
   const handleQuery = async () => {
-    if (!query.trim() || loading) return;
+    if (!validateQuery(query) || loading) return;
+    // Add OpenRouter-specific validation
+    if (!import.meta.env.VITE_OPENROUTER_API_KEY) {
+      setMessages(prev => [...prev, { role: 'ai', text: 'OpenRouter API key not configured.' }]);
+      return;
+    }
 
     const userMsg = query;
     setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
@@ -48,30 +67,35 @@ export const AIAssistant: React.FC = () => {
     setLoading(true);
 
     try {
-      const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY;
-      const ai = new (GoogleGenAI as any)({ apiKey });
       const context = await getSystemContext();
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
-      const response = await (ai.models as any).generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `${context}\n\nUSER_QUERY: ${userMsg}`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          systemInstruction: ASSISTANT_SYSTEM_INSTRUCTION,
-          temperature: 0.2,
-          thinkingConfig: { thinkingBudget: 1000 }
-        }
+      const response = await fetch(`${supabaseUrl}/functions/v1/ai-proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-4o',
+          messages: [
+            { role: 'system', content: ASSISTANT_SYSTEM_INSTRUCTION },
+            { role: 'user', content: `${context}\n\nUSER_QUERY: ${userMsg}` }
+          ]
+        }),
       });
 
-      const text = response.text || 'Protocol error: Empty response.';
-      const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      if (!response.ok) {
+        throw new Error('AI service unavailable');
+      }
 
-      setMessages(prev => [...prev, { role: 'ai', text, sources }]);
+      const data = await response.json();
+      setMessages(prev => [...prev, { role: 'ai', text: data.text || 'Protocol error: Empty response.', sources: [] }]);
       logAudit('AI_QUERY', `4CORE AI accessed for query: ${userMsg.slice(0, 50)}...`, {
-        grounding: sources.length > 0
+        grounding: false
       });
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'ai', text: 'Error: Failed to synchronize with 4CORE Intelligence Node.' }]);
+      console.error('AI Assistant Error:', err);
+      setMessages(prev => [...prev, { role: 'ai', text: 'Error: Failed to synchronize with 4CORE Intelligence Node. Please try again later.' }]);
     } finally {
       setLoading(false);
     }

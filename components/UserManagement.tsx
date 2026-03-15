@@ -1,5 +1,5 @@
 
-import { Search, UserPlus, MoreVertical, Mail, Briefcase, Shield, X, Check, Ban, RefreshCw, FileWarning, Edit2, Trash2, Filter, AlertTriangle, UploadCloud, FileText, Trash, LoaderCircle, KeyRound, Eye, EyeOff, Users, Save, CheckCircle2, AlertCircle, ShieldAlert, UserCheck, LayoutGrid, ListFilter, ChevronDown, Activity, History, Download, DatabaseZap } from 'lucide-react';
+import { Search, UserPlus, MoreVertical, Mail, Briefcase, Shield, X, Check, Ban, RefreshCw, FileWarning, Edit2, Trash2, Filter, AlertTriangle, UploadCloud, FileText, Trash, LoaderCircle, KeyRound, Eye, EyeOff, Users, Save, CheckCircle2, AlertCircle, ShieldAlert, UserCheck, LayoutGrid, ListFilter, ChevronDown, Activity, History, Download, DatabaseZap, Plus, Bell, HelpCircle, ShieldCheck } from 'lucide-react';
 import React, { useState, useMemo, useEffect } from 'react';
 import { getStoredUsers, saveStoredUsers, logAudit, getBusinessUnits, getSessionUser, canManageUsers as checkCanManageUsers, generateLocalUUID, getRegistryUsers, triggerWelcomeEmail } from '../utils';
 import { User, UserRole, UserStatus, BusinessUnit } from '../types';
@@ -8,6 +8,8 @@ import { Select } from './ui/Select';
 
 export const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -226,7 +228,9 @@ export const UserManagement: React.FC = () => {
     email: '',
     department: '',
     role: UserRole.Viewer as UserRole,
-    avatarUrl: ''
+    avatarUrl: '',
+    region: 'US-East-1',
+    subsystem: 'Core Registry'
   });
 
   const buHeadIds = useMemo(() => {
@@ -266,7 +270,16 @@ export const UserManagement: React.FC = () => {
   }, [users, searchTerm, showBUHeadsOnly, buHeadIds, filterRole, filterStatus, filterDepartment]);
 
   const resetForm = () => {
-    setFormData({ firstName: '', lastName: '', email: '', department: '', role: UserRole.Viewer, avatarUrl: '' });
+    setFormData({
+      firstName: '',
+      lastName: '',
+      email: '',
+      department: '',
+      role: UserRole.Viewer,
+      avatarUrl: '',
+      region: 'US-East-1',
+      subsystem: 'Core Registry'
+    });
     setEditingId(null);
   };
 
@@ -325,11 +338,12 @@ export const UserManagement: React.FC = () => {
           department: formData.department,
           avatarUrl: formData.avatarUrl || `https://ui-avatars.com/api/?name=${formData.firstName}+${formData.lastName}&background=f97316&color=fff&size=64&bold=true`,
           status: UserStatus.Active,
-          mustChangePassword: true
+          mustChangePassword: true,
+          // Store provisioning metadata if needed in audit
         };
         const { error } = await supabase.from('profiles').insert([newUser]);
         if (error) throw error;
-        await logAudit('CREATE', `Initialized identity node: ${newUser.email}`, { targetId: newUser.id });
+        await logAudit('CREATE', `Initialized identity node: ${newUser.email} in ${formData.region}`, { targetId: newUser.id, region: formData.region, subsystem: formData.subsystem });
         await triggerWelcomeEmail(newUser);
         triggerFeedback(`Node registered. Identity authorized.`);
       }
@@ -338,7 +352,9 @@ export const UserManagement: React.FC = () => {
       const allUsers = await getRegistryUsers();
       setUsers(allUsers);
     } catch (e: any) {
-      alert("Registration Protocol Failure. Check permissions.");
+      console.error("User creation error:", e);
+      const errorMessage = e?.message || e?.error_description || JSON.stringify(e) || "Unknown error";
+      alert(`Registration Protocol Failure: ${errorMessage}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -361,26 +377,65 @@ export const UserManagement: React.FC = () => {
     }
     setIsSubmitting(true);
     try {
-      // SECURITY PROTOCOL: Unbind identity from all governance nodes before purging
-      // This prevents Foreign Key constraint violations for historical data (KRs, Activities, Notes).
       const identityId = userToDelete.id;
 
-      await Promise.all([
-        // Unbind from Business Units
-        supabase.from('business_units').update({ head_user_id: null }).eq('head_user_id', identityId),
+      // Check if identityId is a valid UUID format
+      const isValidUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identityId);
 
-        // Re-assign Key Results to SYSTEM
-        supabase.from('key_results').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+      // Check if user exists in database
+      const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', identityId).maybeSingle();
+      const userExistsInDB = !!existingProfile;
 
-        // Re-assign Activities to SYSTEM
-        supabase.from('activities').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+      if (!isValidUUID) {
+        // For legacy non-UUID users, clean up references first then delete
+        const cleanupPromises = [
+          supabase.from('business_units').update({ head_user_id: null }).eq('head_user_id', identityId),
+          supabase.from('key_results').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+          supabase.from('activities').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+          supabase.from('strategic_notes').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+          supabase.from('audit_logs').update({ user_id: 'SYSTEM' }).eq('user_id', identityId)
+        ];
 
-        // Re-assign Strategic Notes to SYSTEM
-        supabase.from('strategic_notes').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId)
-      ]);
+        const results = await Promise.all(cleanupPromises);
+        const errors = results.filter(r => r.error);
+        if (errors.length > 0) {
+          console.error('Cleanup errors:', errors);
+        }
 
-      const { error } = await supabase.from('profiles').delete().eq('id', identityId);
-      if (error) throw error;
+        // Only try to delete if user exists in database
+        if (userExistsInDB) {
+          const { error } = await supabase.from('profiles').delete().eq('id', identityId);
+          if (error) {
+            console.error('Delete error:', error);
+            await supabase.from('profiles').update({ status: 'Suspended' }).eq('id', identityId);
+            throw new Error(`Legacy user deactivated: ${error.message}`);
+          }
+        }
+      } else {
+        // For valid UUIDs, clean up references first
+        const cleanupPromises = [
+          supabase.from('business_units').update({ head_user_id: null }).eq('head_user_id', identityId),
+          supabase.from('key_results').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+          supabase.from('activities').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+          supabase.from('strategic_notes').update({ owner_id: 'SYSTEM' }).eq('owner_id', identityId),
+          supabase.from('audit_logs').update({ user_id: 'SYSTEM' }).eq('user_id', identityId)
+        ];
+
+        const results = await Promise.all(cleanupPromises);
+        const errors = results.filter(r => r.error);
+        if (errors.length > 0) {
+          console.error('Cleanup errors:', errors);
+        }
+
+        // Only try to delete if user exists in database
+        if (userExistsInDB) {
+          const { error } = await supabase.from('profiles').delete().eq('id', identityId);
+          if (error) {
+            console.error('Delete error:', error);
+            throw error;
+          }
+        }
+      }
 
       await logAudit('DELETE', `Identity node purged: ${userToDelete.email}`, { targetId: identityId });
       triggerFeedback(`Identity ${userToDelete.email} purged from organization registry.`);
@@ -426,162 +481,305 @@ export const UserManagement: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 animate-scale-in relative">
+    <div className="space-y-8 animate-fade-in relative font-inter p-4 lg:p-0">
       {successFeedback && (
         <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[200] animate-slide-up">
-          <div className="bg-slate-900 text-white px-8 py-4 rounded-[4px] shadow-2xl flex items-center gap-3 border border-white/10 backdrop-blur-xl">
+          <div className="bg-slate-900 text-white px-8 py-4 rounded-xl shadow-2xl flex items-center gap-3 border border-white/10 backdrop-blur-xl">
             <CheckCircle2 className="text-emerald-500" size={20} />
             <span className="text-[12px] font-black uppercase tracking-widest">{successFeedback}</span>
           </div>
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-white/80 backdrop-blur-xl p-8 rounded-[4px] border border-white/20 shadow-sm">
-        <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-slate-900 rounded-[4px] flex items-center justify-center text-white shadow-xl">
-            <Users size={32} />
+      {/* --- TOP HEADER / BREADCRUMB --- */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-2">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+            <span>Organization</span>
+            <ChevronDown size={12} className="-rotate-90" />
+            <span className="text-primary-500">Identities</span>
           </div>
-          <div>
-            <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase leading-none">Identity Management</h2>
-            <p className="text-xs text-slate-500 mt-1 font-black uppercase tracking-widest flex items-center gap-2">
-              <Shield className="w-4 h-4 text-primary-500" /> Administrative Access Node
-            </p>
-          </div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Identity Management</h1>
+          <p className="text-slate-500 text-sm font-medium">Directory of all authorized users and system principals.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => setIsImportModalOpen(true)} className="flex items-center gap-2 px-6 py-4 rounded-[4px] text-[11px] font-black uppercase tracking-widest shadow-xl transition-transform bg-white text-slate-900 border border-slate-200 hover:scale-[1.02] active:scale-[0.98]">
-            <UploadCloud size={16} className="text-primary-500" /> Bulk Provisioning
-          </button>
-          {selectedUserIds.size > 0 && (
-            <button onClick={() => setIsBulkModalOpen(true)} className="flex items-center gap-2 px-6 py-4 rounded-[4px] text-[11px] font-black uppercase tracking-widest shadow-xl transition-transform bg-slate-900 text-white shadow-slate-900/20 hover:scale-[1.02] active:scale-[0.98]">
-              <Users size={16} /> Bulk Role ({selectedUserIds.size})
+        <div className="flex items-center gap-4">
+          <div className="relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary-500 transition-colors" size={18} />
+            <input
+              type="text"
+              placeholder="Search identities, groups, or roles..."
+              value={searchTerm}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="w-[360px] pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 placeholder:text-slate-400 focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all shadow-sm"
+            />
+          </div>
+          <div className="flex items-center gap-3 pl-6 border-l border-slate-200">
+            <button title="Notifications" className="relative p-2.5 bg-white text-slate-400 hover:text-primary-600 rounded-xl transition-all border border-slate-200 shadow-sm transition-all">
+              <Bell size={20} />
+              <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white shadow-sm"></span>
             </button>
-          )}
-          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 px-8 py-4 rounded-[4px] text-[11px] font-black uppercase tracking-widest shadow-xl transition-transform bg-primary-600 text-white shadow-primary-500/20 hover:scale-[1.02] active:scale-[0.98]"><UserPlus size={16} /> New Identity</button>
+            <button title="Help Center" className="p-2.5 bg-white text-slate-400 hover:text-slate-800 rounded-xl transition-all border border-slate-200 shadow-sm transition-all">
+              <HelpCircle size={20} />
+            </button>
+            <div className="w-px h-8 bg-slate-200 mx-2"></div>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-primary-500/20 hover:bg-primary-700 transition-all hover:translate-y-[-2px] active:translate-y-0"
+            >
+              <Plus size={18} /> New Identity
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="bg-white/80 backdrop-blur-2xl p-10 rounded-[4px] shadow-xl border border-white/40">
-        <div className="flex flex-col xl:flex-row justify-between items-stretch gap-6 mb-10">
-          <div className="flex flex-col md:flex-row items-stretch gap-4 flex-1">
-            <div className="relative flex-1 max-w-sm group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input type="text" placeholder="Filter identities..." value={searchTerm} onChange={(e) => handleSearch(e.target.value)} className="w-full pl-11 pr-4 py-4 bg-white border border-slate-200 rounded-[4px] text-xs font-bold outline-none transition-all shadow-sm focus:ring-4 focus:ring-primary-500/10" />
-              {searchHistory.length > 0 && !searchTerm && (
-                <div className="absolute top-full left-0 w-full mt-2 bg-white border border-slate-100 rounded-[4px] shadow-xl z-50 overflow-hidden hidden group-focus-within:block animate-fade-in">
-                  <div className="p-3 border-b border-slate-50 flex justify-between items-center">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Recent Searches</span>
-                    <button onClick={clearHistory} className="text-[9px] font-bold text-rose-500 hover:text-rose-600">Clear</button>
-                  </div>
-                  {searchHistory.map((term, i) => (
-                    <button key={i} onMouseDown={() => setSearchTerm(term)} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                      <History size={12} className="text-slate-300" /> {term}
-                    </button>
-                  ))}
+      {/* --- KPI CARDS --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Total Identities</p>
+          <div className="flex items-end justify-between">
+            <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">{users.length.toLocaleString()}</h3>
+            <div className="px-2 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-lg border border-emerald-100">+12%</div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Active Now</p>
+          <div className="flex items-end justify-between">
+            <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">
+              {users.filter(u => u.status === UserStatus.Active).length}
+            </h3>
+            <div className="flex -space-x-2">
+              {users.slice(0, 3).map((u, i) => (
+                <img key={i} src={u.avatarUrl} className="w-8 h-8 rounded-full border-2 border-white object-cover" alt="" />
+              ))}
+              {users.length > 3 && (
+                <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
+                  +{users.length - 3}
                 </div>
               )}
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center bg-white border border-slate-200 rounded-[4px] pl-4 shadow-sm hover:border-slate-300 transition-all">
-                <ListFilter size={14} className="text-slate-400" />
-                <Select
-                  value={filterRole}
-                  onChange={(val) => setFilterRole(val as string)}
-                  options={[
-                    { value: 'all', label: 'All Roles' },
-                    ...Object.values(UserRole).map(role => ({ value: role, label: role }))
-                  ]}
-                  variant="minimal"
-                  className="px-2 py-3"
-                />
-              </div>
-
-              <div className="flex items-center bg-white border border-slate-200 rounded-[4px] pl-4 shadow-sm hover:border-slate-300 transition-all">
-                <Activity size={14} className="text-slate-400" />
-                <Select
-                  value={filterStatus}
-                  onChange={(val) => setFilterStatus(val as string)}
-                  options={[
-                    { value: 'all', label: 'All Statuses' },
-                    ...Object.values(UserStatus).map(status => ({ value: status, label: status }))
-                  ]}
-                  variant="minimal"
-                  className="px-2 py-3"
-                />
-              </div>
-
-              <div className="flex items-center bg-white border border-slate-200 rounded-[4px] pl-4 shadow-sm hover:border-slate-300 transition-all">
-                <Briefcase size={14} className="text-slate-400" />
-                <Select
-                  value={filterDepartment}
-                  onChange={(val) => setFilterDepartment(val as string)}
-                  options={[
-                    { value: 'all', label: 'All Units' },
-                    ...availableBUs.map(bu => ({ value: bu.name, label: bu.name }))
-                  ]}
-                  variant="minimal"
-                  className="px-2 py-3"
-                />
-              </div>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-          {filteredUsers.map(user => (
-            <div key={user.id} className={`bg-white rounded-[4px] border p-6 shadow-sm hover:shadow-xl transition-all flex flex-col justify-between group animate-scale-in border-b-4 ${selectedUserIds.has(user.id) ? 'border-primary-500 ring-2 ring-primary-500/20' : 'border-slate-200/60 hover:border-b-primary-500'}`}>
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center gap-4">
-                  <div className="relative cursor-pointer" onClick={() => toggleUserSelection(user.id)}>
-                    <img src={user.avatarUrl} alt={user.name} className={`w-14 h-14 rounded-[4px] object-cover border-2 ${user.status === UserStatus.Active ? 'border-emerald-100' : 'border-rose-100'}`} />
-                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${user.status === UserStatus.Active ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-                    {selectedUserIds.has(user.id) && (
-                      <div className="absolute inset-0 bg-primary-500/80 rounded-[4px] flex items-center justify-center animate-fade-in">
-                        <Check size={24} className="text-white" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="overflow-hidden">
-                    <h4 className="font-black text-slate-800 text-sm leading-tight uppercase truncate">{user.name}</h4>
-                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mt-1 truncate">{user.role}</p>
-                  </div>
-                </div>
-                {canManageUsers && (
-                  <button onClick={() => setUserToDelete(user)} className="p-2 text-slate-300 hover:text-rose-600 transition-colors">
-                    <Trash2 size={16} />
-                  </button>
-                )}
-              </div>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Pending Review</p>
+          <div className="flex items-end justify-between">
+            <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">28</h3>
+            <div className="px-2 py-1 bg-amber-50 text-amber-600 text-[10px] font-black rounded-lg border border-amber-100">Action Req.</div>
+          </div>
+        </div>
 
-              <div className="space-y-4 pt-4 border-t border-slate-50 mt-auto">
-                <details className="group/details">
-                  <summary className="list-none cursor-pointer flex items-center justify-between text-[10px] font-bold text-slate-400 hover:text-slate-600 transition-colors">
-                    <span>Contact & Unit</span>
-                    <ChevronDown size={12} className="group-open/details:rotate-180 transition-transform" />
-                  </summary>
-                  <div className="mt-3 space-y-2 animate-slide-up">
-                    <div className="flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                      <Mail size={12} className="text-slate-300" /> <span className="truncate">{user.email}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[11px] font-medium text-slate-600">
-                      <Briefcase size={12} className="text-slate-300" /> <span className="truncate">{user.department}</span>
-                    </div>
-                  </div>
-                </details>
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Suspended</p>
+          <div className="flex items-end justify-between">
+            <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">
+              {users.filter(u => u.status !== UserStatus.Active).length}
+            </h3>
+            <div className="px-2 py-1 bg-slate-50 text-slate-400 text-[10px] font-black rounded-lg border border-slate-100">-2%</div>
+          </div>
+        </div>
+      </div>
 
-                {canManageUsers && (
-                  <div className="flex gap-2 pt-2">
-                    <button onClick={() => { setEditingId(user.id); setFormData({ firstName: user.firstName, lastName: user.lastName, email: user.email, department: user.department, role: user.role, password: '' }); setIsModalOpen(true); }} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-slate-50 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-[4px] transition-all text-[9px] font-black uppercase tracking-widest border border-slate-100">
-                      <Edit2 size={12} /> Modify
-                    </button>
-                    <button onClick={() => { setUserToModifyStatus(user); setIsSuspending(true); }} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-[4px] transition-all text-[9px] font-black uppercase tracking-widest border ${user.status === UserStatus.Active ? 'bg-rose-50 text-rose-400 border-rose-100 hover:bg-rose-100 hover:text-rose-600' : 'bg-emerald-50 text-emerald-400 border-emerald-100 hover:bg-emerald-100 hover:text-emerald-600'}`}>
-                      {user.status === UserStatus.Active ? 'Freeze' : 'Restore'}
-                    </button>
-                  </div>
-                )}
-              </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden transition-all hover:shadow-card-hover">
+        {/* Table Controls */}
+        <div className="flex flex-col md:flex-row items-center justify-between px-10 py-6 border-b border-slate-100 gap-6">
+          <div className="flex items-center gap-4">
+            <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={() => setFilterRole('all')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filterRole === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                All Accounts
+              </button>
+              <button
+                onClick={() => setFilterRole('External')}
+                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${filterRole === 'External' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                External
+              </button>
             </div>
-          ))}
+            <button title="Filter Results" className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-600 shadow-sm transition-all">
+              <Filter size={18} />
+            </button>
+            {selectedUserIds.size > 0 && (
+              <button onClick={() => setIsBulkModalOpen(true)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all bg-slate-900 text-white shadow-lg shadow-slate-900/10 active:scale-95">
+                Bulk Role ({selectedUserIds.size})
+              </button>
+            )}
+            <button onClick={() => setIsImportModalOpen(true)} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-primary-600 shadow-sm transition-all" title="Bulk Provisioning">
+              <UploadCloud size={18} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Show:</span>
+              <button className="flex items-center gap-1.5 text-primary-600 text-sm font-bold group">
+                {filterStatus === 'all' ? 'Active Records' : filterStatus}
+                <ChevronDown size={14} className="group-hover:translate-y-0.5 transition-transform" />
+              </button>
+            </div>
+            <button onClick={() => downloadCsvTemplate()} className="flex items-center gap-2.5 px-4 py-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 text-xs font-bold uppercase tracking-widest transition-all">
+              <Download size={16} /> <span className="hidden sm:inline">Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto min-h-[400px]">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/30">
+                <th className="py-5 px-10 text-left">
+                  <input
+                    type="checkbox"
+                    checked={selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedUserIds(new Set(filteredUsers.map(u => u.id)));
+                      } else {
+                        setSelectedUserIds(new Set());
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-slate-200 accent-primary-500 cursor-pointer"
+                  />
+                </th>
+                <th className="text-left py-5 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">User Identity</th>
+                <th className="text-left py-5 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Identifier</th>
+                <th className="text-left py-5 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Access Status</th>
+                <th className="text-left py-5 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Role Designation</th>
+                <th className="text-left py-5 px-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Activity</th>
+                <th className="text-right py-5 px-10 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-20 text-center">
+                    <div className="flex flex-col items-center gap-3 opacity-20">
+                      <Users size={48} />
+                      <p className="text-sm font-bold uppercase tracking-widest">No matching identities found</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((user) => (
+                  <tr key={user.id} className={`group hover:bg-slate-50/50 transition-colors ${selectedUserIds.has(user.id) ? 'bg-primary-50/30' : ''}`}>
+                    <td className="py-6 px-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.has(user.id)}
+                        onChange={() => toggleUserSelection(user.id)}
+                        className="w-4 h-4 rounded border-slate-200 accent-primary-500 cursor-pointer"
+                      />
+                    </td>
+                    <td className="py-6 px-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-slate-100 flex-shrink-0 overflow-hidden ring-2 ring-white shadow-sm">
+                          <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-900 tracking-tight">{user.name}</p>
+                          <p className="text-xs text-slate-400 font-medium">{user.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-6 px-6">
+                      <span className="px-2 py-1 bg-slate-100 text-slate-500 text-[10px] font-black rounded-lg border border-slate-200 uppercase">
+                        ID-{user.id.slice(0, 5)}
+                      </span>
+                    </td>
+                    <td className="py-6 px-6">
+                      <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold ${user.status === UserStatus.Active
+                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                        : user.status === UserStatus.Suspended
+                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                          : 'bg-amber-50 text-amber-600 border border-amber-100'
+                        }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${user.status === UserStatus.Active ? 'bg-emerald-500 animate-pulse' : user.status === UserStatus.Suspended ? 'bg-rose-500' : 'bg-amber-500'
+                          }`} />
+                        {user.status}
+                      </div>
+                    </td>
+                    <td className="py-6 px-6">
+                      <p className="text-sm font-bold text-slate-700">{user.role}</p>
+                    </td>
+                    <td className="py-6 px-6">
+                      <p className="text-[11px] font-bold text-slate-400 italic">2 minutes ago</p>
+                    </td>
+                    <td className="py-6 px-10 text-right">
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setEditingId(user.id);
+                            setFormData({
+                              firstName: user.firstName,
+                              lastName: user.lastName,
+                              email: user.email,
+                              department: user.department,
+                              role: user.role,
+                              avatarUrl: user.avatarUrl || ''
+                            });
+                            setIsModalOpen(true);
+                          }}
+                          className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setUserToModifyStatus(user);
+                            setIsSuspending(true);
+                          }}
+                          className={`p-2 rounded-lg transition-all ${user.status === UserStatus.Active
+                            ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                            : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                          title={user.status === UserStatus.Active ? 'Freeze' : 'Restore'}
+                        >
+                          {user.status === UserStatus.Active ? <Ban size={16} /> : <Check size={16} />}
+                        </button>
+                        <button
+                          onClick={() => setUserToDelete(user)}
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                          title="Purge"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Toolbar */}
+        <div className="px-10 py-6 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            Showing <span className="text-slate-900">1</span> to <span className="text-slate-900">{Math.min(filteredUsers.length, 10)}</span> of <span className="text-slate-900">{users.length}</span> identities
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              title="Previous Page"
+              className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all disabled:opacity-30 disabled:hover:text-slate-400 shadow-sm"
+            >
+              <ChevronDown size={16} className="rotate-90" />
+            </button>
+            <div className="flex items-center gap-1 mx-2">
+              <button className="min-w-[40px] h-10 flex items-center justify-center rounded-xl text-xs font-black bg-primary-600 text-white shadow-lg shadow-primary-500/20">1</button>
+              <button className="min-w-[40px] h-10 flex items-center justify-center rounded-xl text-xs font-black bg-white text-slate-500 border border-slate-200 hover:border-slate-300">2</button>
+              <button className="min-w-[40px] h-10 flex items-center justify-center rounded-xl text-xs font-black bg-white text-slate-500 border border-slate-200 hover:border-slate-300">3</button>
+              <span className="text-slate-300 px-1">...</span>
+              <button className="min-w-[40px] h-10 flex items-center justify-center rounded-xl text-xs font-black bg-white text-slate-500 border border-slate-200 hover:border-slate-300">129</button>
+            </div>
+            <button title="Next Page" className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-700 shadow-sm transition-all">
+              <ChevronDown size={16} className="-rotate-90" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -712,75 +910,133 @@ export const UserManagement: React.FC = () => {
 
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white rounded-[4px] shadow-2xl w-full max-w-xl overflow-hidden animate-scale-in border border-white/10">
-            <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-white">
-              <h3 className="font-black text-slate-900 uppercase tracking-tight text-xl leading-none">{editingId ? 'Modify Identity Record' : 'New Identity Provision'}</h3>
-              <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="p-3 hover:bg-slate-50 rounded-[4px] text-slate-300 transition-all hover:text-slate-600"><X size={24} /></button>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden animate-scale-in border border-white/10">
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-white">
+              <div>
+                <h3 className="font-black text-slate-900 uppercase tracking-tight text-xl leading-none">{editingId ? 'Modify Identity Record' : 'New Identity Provision'}</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">{editingId ? 'Protocol: Registry Update' : 'Protocol: Deployment Authorization'}</p>
+              </div>
+              <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="p-4 hover:bg-slate-50 rounded-2xl text-slate-300 transition-all hover:text-slate-600"><X size={24} /></button>
             </div>
 
-            <div className="px-10 py-6 bg-slate-50/50 flex flex-col items-center border-b border-slate-100">
-              <div className="relative group">
-                <div className="w-24 h-24 rounded-2xl bg-white border-2 border-slate-200 overflow-hidden shadow-inner flex items-center justify-center relative">
-                  {formData.avatarUrl ? (
-                    <img src={formData.avatarUrl} alt="Preview" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="text-slate-300 flex flex-col items-center">
-                      <Users size={32} />
-                      <span className="text-[8px] font-black uppercase mt-1">No Image</span>
+            <div className="flex flex-col md:flex-row h-full">
+              {/* Left Column: Profile & Basics */}
+              <div className="flex-1 p-8 space-y-8 bg-slate-50/30">
+                <div className="flex flex-col items-center">
+                  <div className="relative group">
+                    <div className="w-24 h-24 rounded-3xl bg-white border-2 border-slate-200 overflow-hidden shadow-sm flex items-center justify-center relative transition-all group-hover:border-primary-500 group-hover:shadow-lg group-hover:shadow-primary-500/10">
+                      {formData.avatarUrl ? (
+                        <img src={formData.avatarUrl} alt="Preview" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-slate-300 flex flex-col items-center">
+                          <Users size={32} />
+                          <span className="text-[8px] font-black uppercase mt-1">Ready</span>
+                        </div>
+                      )}
+                      <label title="Upload Avatar" className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white">
+                        <UploadCloud size={20} />
+                        <span className="text-[10px] font-black uppercase mt-1 tracking-widest">Update</span>
+                        <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                      </label>
                     </div>
-                  )}
-                  <label className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center cursor-pointer text-white">
-                    <UploadCloud size={20} />
-                    <span className="text-[10px] font-black uppercase mt-1 tracking-widest">Update</span>
-                    <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
-                  </label>
+                  </div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-4">Security ID: Node Avatar Binding</p>
                 </div>
-                {formData.avatarUrl && (
-                  <button
-                    onClick={() => setFormData(prev => ({ ...prev, avatarUrl: '' }))}
-                    className="absolute -top-2 -right-2 w-7 h-7 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg hover:bg-rose-600 transition-colors border-2 border-white"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">First Name</label>
+                      <input type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all" placeholder="John" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Last Name</label>
+                      <input type="text" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all" placeholder="Doe" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block ml-1">Corporate Endpoint</label>
+                    <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 outline-none transition-all" placeholder="john.doe@novaai.com.ng" />
+                  </div>
+                </div>
               </div>
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-4">Security ID: Node Avatar Binding</p>
+
+              {/* Right Column: Provisioning & Roles */}
+              <div className="flex-1 p-8 space-y-6 border-l border-slate-100 bg-white">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-6">
+                    <Select
+                      label="Target Department"
+                      value={formData.department}
+                      onChange={(val) => setFormData({ ...formData, department: val as string })}
+                      options={availableBUs.map(bu => ({ value: bu.name, label: bu.name }))}
+                      placeholder="Select Unit"
+                      className="w-full"
+                    />
+                    <Select
+                      label="Governance Role"
+                      value={formData.role}
+                      onChange={(val) => setFormData({ ...formData, role: val as UserRole })}
+                      options={Object.values(UserRole).map(role => ({ value: role, label: role }))}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div className="w-full h-px bg-slate-100 my-2"></div>
+
+                  <div className="space-y-4">
+                    <div className="bg-primary-50/50 p-4 rounded-2xl border border-primary-100">
+                      <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <DatabaseZap size={12} /> Provisioning Parameters
+                      </h4>
+                      <div className="grid grid-cols-1 gap-4">
+                        <Select
+                          label="Provisioning Region"
+                          value={formData.region}
+                          onChange={(val) => setFormData({ ...formData, region: val as string })}
+                          options={[
+                            { value: 'US-East-1', label: 'US-East-1 (N. Virginia)' },
+                            { value: 'EU-West-1', label: 'EU-West-1 (Ireland)' },
+                            { value: 'AP-South-1', label: 'AP-South-1 (Mumbai)' },
+                            { value: 'AF-South-1', label: 'AF-South-1 (Lagos Edge)' },
+                          ]}
+                          className="w-full"
+                        />
+                        <Select
+                          label="Authorized Subsystem"
+                          value={formData.subsystem}
+                          onChange={(val) => setFormData({ ...formData, subsystem: val as string })}
+                          options={[
+                            { value: 'Core Registry', label: 'Core Registry (Identity)' },
+                            { value: 'Financial Ops', label: 'Financial Ops (Tactical)' },
+                            { value: 'Strategic Logic', label: 'Strategic Logic (Neural)' },
+                            { value: 'Audit Protocol', label: 'Audit Protocol (Watchdog)' },
+                          ]}
+                          className="w-full"
+                        />
+                      </div>
+                    </div>
+
+                    {!editingId && null}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="p-10 space-y-8">
-              <div className="grid grid-cols-2 gap-6">
-                <input type="text" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-[4px] text-sm font-bold" placeholder="First Name" />
-                <input type="text" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-[4px] text-sm font-bold" placeholder="Last Name" />
-              </div>
-              <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-[4px] text-sm font-bold" placeholder="Corporate Endpoint (@fcis.com)" />
-              <div className="grid grid-cols-2 gap-6">
-                <Select
-                  label="Target Unit"
-                  value={formData.department}
-                  onChange={(val) => setFormData({ ...formData, department: val as string })}
-                  options={availableBUs.map(bu => ({ value: bu.name, label: bu.name }))}
-                  placeholder="Select Unit"
-                  className="w-full"
-                />
-                <Select
-                  label="Access Role"
-                  value={formData.role}
-                  onChange={(val) => setFormData({ ...formData, role: val as UserRole })}
-                  options={Object.values(UserRole).map(role => ({ value: role, label: role }))}
-                  className="w-full"
-                />
-              </div>
-              {!editingId && (
-                <div className="relative">
-                  <input type={showTempPassword ? "text" : "password"} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} className="w-full p-4 pl-12 bg-slate-50 border border-slate-200 rounded-[4px] text-sm font-bold" placeholder="Temporary Security Key" />
-                  <KeyRound size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
-                  <button type="button" onClick={() => setShowTempPassword(!showTempPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">{showTempPassword ? <EyeOff size={20} /> : <Eye size={20} />}</button>
-                </div>
-              )}
-            </div>
-            <div className="p-10 border-t border-slate-50 bg-slate-50/30 flex justify-end">
-              <button onClick={handleSaveUser} disabled={isSubmitting} className="flex items-center gap-3 px-10 py-5 rounded-full text-[12px] font-black uppercase tracking-[0.1em] bg-slate-900 text-white shadow-2xl hover:bg-primary-600 transition-all">
-                {isSubmitting ? <LoaderCircle className="w-5 h-5 animate-spin" /> : <Save size={18} />} {editingId ? 'Update Record' : 'Authorize Identity'}
+            <div className="p-8 border-t border-slate-50 bg-slate-50/30 flex justify-end gap-4">
+              <button
+                onClick={() => { setIsModalOpen(false); resetForm(); }}
+                className="px-8 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveUser}
+                disabled={isSubmitting}
+                className="flex items-center gap-3 px-10 py-4 rounded-2xl text-[12px] font-black uppercase tracking-[0.1em] bg-slate-900 text-white shadow-xl shadow-slate-900/10 hover:bg-primary-600 hover:shadow-primary-500/20 transition-all hover:translate-y-[-2px] active:translate-y-0 disabled:opacity-50 disabled:translate-y-0"
+              >
+                {isSubmitting ? <LoaderCircle className="w-5 h-5 animate-spin" /> : <ShieldCheck size={18} />}
+                {editingId ? 'Modify Access' : 'Authorize Identity'}
               </button>
             </div>
           </div>

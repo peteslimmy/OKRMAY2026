@@ -302,7 +302,16 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
   const [isImporting, setIsImporting] = useState(false);
   const [importData, setImportData] = useState('');
 
-  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, success: 0, errors: [] as string[] });
+  const [bulkProgress, setBulkProgress] = useState({
+    current: 0,
+    total: 0,
+    success: 0,
+    errors: [] as string[],
+    currentStatus: '' as string,
+    currentRow: '' as string,
+    isComplete: false,
+    failedRows: [] as { row: number, data: string, error: string, solution: string }[]
+  });
   const [isVetting, setIsVetting] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
 
@@ -355,8 +364,9 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
   }, [selectedYear, effectiveWeekValue]);
 
   const downloadCSVTemplate = () => {
-    const headers = "Key Result Label,Activity Title,Department,Owner Email,Comments,Task 1,Task 2,Task 3,Task 4,Task 5,Task 6,Task 7,Task 8,Task 9,Task 10\n";
-    const sample = "KR1,Improve Mobile Responsiveness,IT,john.doe@example.com,\"Implemented responsive design across all key pages, improving user experience on mobile devices.\",Test API,Run UAT,Test responsiveness,Design new flow,Gather feedback,Create mockups,Analyze feedback,Update FAQs,Create tutorial content,Deploy changes\n";
+    // CSV format: Key Result Label, Activity Title, Task1, Task2, Task3, Task4, Task5, Task6, Task7, Task8, Task9, Task10
+    const headers = "Key Result Label,Activity Title,Task1,Task2,Task3,Task4,Task5,Task6,Task7,Task8,Task9,Task10\n";
+    const sample = `KR1,Improve Mobile Responsiveness,Design mockups,Create components,Write unit tests,Conduct code review,Deploy to staging,Run smoke tests,Collect user feedback,Document features,Fix bugs\n`;
     const blob = new Blob([headers + sample], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -389,40 +399,90 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
   const handleBulkUpload = async () => {
     if (!importData.trim()) return;
     setSubmitting(true);
+
+    // DEBUG: Log raw import data for diagnostics
+    console.log('[BULK UPLOAD] Raw import data:', importData);
+    console.log('[BULK UPLOAD] Available KRs:', availableKRs.map(k => ({ label: k.label, id: k.id })));
+    console.log('[BULK UPLOAD] Current user:', currentUser);
+    console.log('[BULK UPLOAD] Week/Year:', { week: currentFilterWeekNum, year: selectedYear });
+
     const rows = importData.split('\n').filter(r => r.trim() !== '').slice(1);
-    setBulkProgress({ current: 0, total: rows.length, success: 0, errors: [] });
+    console.log('[BULK UPLOAD] Parsed rows count:', rows.length);
+    setBulkProgress({
+      current: 0,
+      total: rows.length,
+      success: 0,
+      errors: [],
+      currentStatus: 'Initializing upload...',
+      currentRow: '',
+      isComplete: false,
+      failedRows: []
+    });
 
     try {
       const newActivities: any[] = [];
       const errors: string[] = [];
+      const failedRows: { row: number, data: string, error: string, solution: string }[] = [];
       let successCount = 0;
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        setBulkProgress(prev => ({ ...prev, current: i + 1 }));
+        console.log(`[BULK UPLOAD] Processing row ${i + 1}:`, row);
+
+        // Update progress with current status
+        setBulkProgress(prev => ({
+          ...prev,
+          current: i + 1,
+          currentStatus: `Processing row ${i + 1} of ${rows.length}...`,
+          currentRow: row.substring(0, 50) + (row.length > 50 ? '...' : '')
+        }));
+
         const parts = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(p => p.trim().replace(/^"|"$/g, '')); // Handle commas in quotes
 
+        // DEBUG: Log parsed parts
+        console.log(`[BULK UPLOAD] Row ${i + 1} parsed parts:`, parts);
+
         if (parts.length < 2) {
-          errors.push(`Row ${i + 2}: Missing required columns. Expected at least 2 (Key Result, Activity Title).`);
+          const errorMsg = `Row ${i + 2}: Missing required columns. Expected at least 2 (Key Result, Activity Title).`;
+          const solution = 'Ensure your CSV has at least 2 columns: Key Result name and Activity Title. Example: "KR1,My Activity,Task 1"';
+          errors.push(errorMsg);
+          failedRows.push({ row: i + 2, data: row, error: errorMsg, solution });
           continue;
         }
         const krLabel = parts[0];
         const title = parts[1];
-        const rowTasksRaw = parts.slice(2, 12); // Tasks start from index 2
+        // CSV format: KR Label, Activity Title, Task1, Task2, Task3...
+        // Tasks start from index 2 (after KR, Title)
+        const rowTasksRaw = parts.slice(2); // Tasks start from index 2
 
+        // DEBUG: Log KR matching attempt
+        console.log(`[BULK UPLOAD] Looking for KR: "${krLabel}"`);
         const krMatch = availableKRs.find(k => k.label.toUpperCase() === krLabel.toUpperCase());
+        console.log(`[BULK UPLOAD] KR Match result:`, krMatch);
+
         if (!krMatch) {
-          errors.push(`Row ${i + 2}: Strategic KR "${krLabel}" not found.`);
+          // DEBUG: Log available KR labels for comparison
+          console.log('[BULK UPLOAD] Available KR labels:', availableKRs.map(k => k.label.toUpperCase()));
+          const errorMsg = `Row ${i + 2}: Strategic KR "${krLabel}" not found.`;
+          const solution = `Available Key Results: ${availableKRs.map(k => k.label).join(', ')}. Use exactly one of these KR names in the first column.`;
+          errors.push(errorMsg);
+          failedRows.push({ row: i + 2, data: row, error: errorMsg, solution });
           continue;
         }
         if (!title) {
-          errors.push(`Row ${i + 2}: Activity Title missing.`);
+          const errorMsg = `Row ${i + 2}: Activity Title missing.`;
+          const solution = 'Add a descriptive activity title in the second column. Example: "KR1,Weekly Report Review"';
+          errors.push(errorMsg);
+          failedRows.push({ row: i + 2, data: row, error: errorMsg, solution });
           continue;
         }
 
         // Use current user's department and ID as owner
         if (!currentUser) {
-          errors.push(`Row ${i + 2}: User not authenticated. Cannot assign owner.`);
+          const errorMsg = `Row ${i + 2}: User not authenticated. Cannot assign owner.`;
+          const solution = 'Log out and log back in to refresh your session, then try the upload again.';
+          errors.push(errorMsg);
+          failedRows.push({ row: i + 2, data: row, error: errorMsg, solution });
           continue;
         }
 
@@ -432,7 +492,10 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
           status: TaskStatus.Undefined
         }));
         if (rowTasks.length === 0) {
-          errors.push(`Row ${i + 2}: No tasks defined.`);
+          const errorMsg = `Row ${i + 2}: No tasks defined.`;
+          const solution = 'Add at least one task after the activity title. Example: "KR1,Review,Task 1,Task 2"';
+          errors.push(errorMsg);
+          failedRows.push({ row: i + 2, data: row, error: errorMsg, solution });
           continue;
         }
         newActivities.push({
@@ -450,19 +513,83 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
         successCount++;
       }
 
+      // Update status: Uploading to database
+      setBulkProgress(prev => ({
+        ...prev,
+        currentStatus: 'Syncing data to cloud database...',
+        currentRow: `${newActivities.length} activities prepared`
+      }));
+
+      // DEBUG: Log final activities to be inserted
+      console.log('[BULK UPLOAD] Final activities to insert:', newActivities);
+      console.log('[BULK UPLOAD] Errors collected:', errors);
+
       if (newActivities.length > 0) {
-        const { error } = await supabase.from('activities').upsert(newActivities);
-        if (error) throw error;
-        logAudit('IMPORT', `Bulk ingestion complete: ${newActivities.length} updates added.`);
-        await fetchData();
+        // Delete existing activities for the same week/year before inserting new ones (overwrite mode)
+        setBulkProgress(prev => ({
+          ...prev,
+          currentStatus: 'Clearing existing records for this period...',
+          currentRow: `Week ${currentFilterWeekNum}, ${selectedYear}`
+        }));
+        
+        const { error: deleteError } = await supabase
+          .from('activities')
+          .delete()
+          .eq('week', currentFilterWeekNum)
+          .eq('year', selectedYear);
+          
+        if (deleteError) {
+          console.error('[BULK UPLOAD] Delete existing records failed:', deleteError);
+          // Continue with insert even if delete fails - will upsert instead
+        }
+        
+        // Now insert the new records
+        setBulkProgress(prev => ({
+          ...prev,
+          currentStatus: 'Inserting new records...',
+          currentRow: `${newActivities.length} activities`
+        }));
+        
+        const { error } = await supabase.from('activities').insert(newActivities);
+        // DEBUG: Log Supabase response
+        console.log('[BULK UPLOAD] Supabase upsert result:', { error });
+
+        if (error) {
+          const dbErrorMsg = `Database error: ${error.message}`;
+          const dbSolution = 'Check your internet connection and ensure you have permission to write to the activities table. Try again or contact administrator.';
+          errors.push(dbErrorMsg);
+          failedRows.push({ row: 0, data: 'Database sync', error: dbErrorMsg, solution: dbSolution });
+        } else {
+          logAudit('IMPORT', `Bulk ingestion complete: ${newActivities.length} updates added.`);
+          await fetchData();
+        }
       }
-      setBulkProgress(prev => ({ ...prev, success: successCount, errors: errors }));
+
+      // Mark as complete
+      setBulkProgress(prev => ({
+        ...prev,
+        success: successCount,
+        errors: errors,
+        currentStatus: errors.length > 0 ? 'Upload completed with errors' : 'Upload completed successfully!',
+        isComplete: true,
+        failedRows: failedRows
+      }));
+
       if (errors.length === 0) {
         setIsImporting(false);
         setImportData('');
       }
-    } catch (e) {
-      alert("Ingestion failure. Check cloud connection.");
+    } catch (e: any) {
+      console.error('[BULK UPLOAD] Exception:', e);
+      const errorMsg = e?.message || 'Unknown error occurred';
+      const solution = 'Check your internet connection, refresh the page, and try again. If the problem persists, contact support.';
+      setBulkProgress(prev => ({
+        ...prev,
+        errors: [`Critical failure: ${errorMsg}`],
+        currentStatus: 'Upload failed',
+        isComplete: true,
+        failedRows: [{ row: 0, data: 'Critical error', error: errorMsg, solution }]
+      }));
     } finally {
       setSubmitting(false);
     }
@@ -688,26 +815,58 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
               </div>
             </div>
 
-            {submitting ? (
-              <div className="py-12 flex flex-col items-center justify-center space-y-8 w-full max-w-sm mx-auto">
+            {(submitting || bulkProgress.isComplete) ? (
+              <div className="py-8 flex flex-col items-center justify-center space-y-6 w-full max-w-sm mx-auto">
                 <div className="w-full space-y-2">
                   <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                    <span>Ingestion Progress</span>
+                    <span>{bulkProgress.currentStatus || 'Processing...'}</span>
                     <span>{bulkProgress.total > 0 ? Math.round((bulkProgress.current / bulkProgress.total) * 100) : 0}%</span>
                   </div>
-                  <div className="h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+                  <div className={`h-3 rounded-full overflow-hidden border ${bulkProgress.isComplete && bulkProgress.errors.length > 0 ? 'bg-rose-100 border-rose-200' : 'bg-slate-100 border-slate-200'}`}>
                     <div
-                      className="h-full bg-primary-600 transition-all duration-300 relative"
+                      className={`h-full transition-all duration-300 relative ${bulkProgress.isComplete && bulkProgress.errors.length > 0 ? 'bg-rose-500' : 'bg-primary-600'}`}
                       style={{ width: `${bulkProgress.total > 0 ? (bulkProgress.current / bulkProgress.total) * 100 : 0}%` }}
                     >
-                      <div className="absolute inset-0 bg-white/30 animate-[shimmer_1s_infinite]" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }}></div>
+                      {!bulkProgress.isComplete && (
+                        <div className="absolute inset-0 bg-white/30 animate-[shimmer_1s_infinite]" style={{ backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)' }}></div>
+                      )}
                     </div>
                   </div>
                 </div>
                 <div className="text-center">
-                  <h4 className="font-bold text-slate-900 uppercase text-sm">Processing Data Stream</h4>
-                  <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mt-1">Node {bulkProgress.current} of {bulkProgress.total}</p>
+                  <h4 className={`font-bold uppercase text-sm ${bulkProgress.isComplete && bulkProgress.errors.length > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                    {bulkProgress.isComplete
+                      ? (bulkProgress.errors.length > 0 ? 'Completed with Issues' : 'Upload Complete!')
+                      : 'Processing Data Stream'}
+                  </h4>
+                  <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mt-1">
+                    {bulkProgress.currentRow || `Row ${bulkProgress.current} of ${bulkProgress.total}`}
+                  </p>
+                  {bulkProgress.success > 0 && (
+                    <p className="text-[10px] font-bold text-emerald-600 mt-2">✓ {bulkProgress.success} records synced successfully</p>
+                  )}
                 </div>
+
+                {/* Show detailed errors with solutions during/after upload */}
+                {bulkProgress.failedRows.length > 0 && (
+                  <div className="w-full space-y-3 mt-4">
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-[4px]">
+                      <h5 className="text-rose-900 font-bold text-xs uppercase tracking-wider mb-2">Issues Found ({bulkProgress.failedRows.length})</h5>
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {bulkProgress.failedRows.slice(0, 5).map((fail, i) => (
+                          <div key={i} className="p-3 bg-white border border-rose-100 rounded-[4px] text-[10px]">
+                            <p className="font-bold text-rose-700">{fail.error}</p>
+                            <p className="text-slate-500 mt-1">📋 Row {fail.row}: {fail.data.substring(0, 40)}...</p>
+                            <p className="text-emerald-600 mt-2 font-bold">💡 Solution: {fail.solution}</p>
+                          </div>
+                        ))}
+                        {bulkProgress.failedRows.length > 5 && (
+                          <p className="text-[10px] text-slate-500 text-center">+ {bulkProgress.failedRows.length - 5} more issues...</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : bulkProgress.errors.length > 0 ? (
               <div className="flex-1 overflow-y-auto space-y-6 p-2">
@@ -731,7 +890,7 @@ export const ReportingEngine: React.FC<{ selectedYear: number, selectedWeek?: st
               <div className="flex flex-col gap-4">
                 <div className="p-4 bg-amber-50 border border-amber-100 rounded-[4px] flex items-start gap-3">
                   <AlertCircle className="text-amber-600 shrink-0" size={18} />
-                  <p className="text-amber-800 text-[11px] leading-relaxed font-medium uppercase tracking-tighter">Required: Key Result, Activity Title, Task 1, ..., Task 10.</p>
+                  <p className="text-amber-800 text-[11px] leading-relaxed font-medium uppercase tracking-tighter">Required: Key Result, Activity Title, Task1, Task2, ... Task10</p>
                 </div>
                 <textarea
                   value={importData}
