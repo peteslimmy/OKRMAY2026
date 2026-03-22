@@ -4,17 +4,17 @@ import {
     Landmark, Phone, Heart, Receipt, BarChart3, Plus, X, Search,
     Upload, TrendingUp, TrendingDown, Eye, EyeOff, Filter,
     Wallet, PiggyBank, ShieldCheck, FileText, Building2, User as UserIcon,
-    Bell, HelpCircle, PhoneOff, HandHeart, ShoppingCart, ArrowUpRight, ArrowDownRight, ChevronDown, MonitorStop
+    Bell, HelpCircle, HandHeart, ShoppingCart, ArrowUpRight, ArrowDownRight, ChevronDown, MonitorStop, Edit2, Trash2, Clock, UserX
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { getRegistryUsers, getBusinessUnits, getViolations, getContributions, getExpenses, getMonthlyFinancialSummary, addViolation as dbAddViolation, updateViolation as dbUpdateViolation, addContribution as dbAddContribution, addExpense as dbAddExpense } from '../utils';
-import { User, BusinessUnit, Violation, Contribution, Expense } from '../types';
+import { getRegistryUsers, getBusinessUnits, getViolations, getContributions, getExpenses, getMonthlyFinancialSummary, addViolation as dbAddViolation, updateViolation as dbUpdateViolation, addContribution as dbAddContribution, addExpense as dbAddExpense, getFineTypes, addFineType as dbAddFineType, updateFineType as dbUpdateFineType, deleteFineType as dbDeleteFineType } from '../utils';
+import { User, BusinessUnit, Violation, Contribution, Expense, FineType } from '../src/types';
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
 // Types now imported from types.ts - Violation, Contribution, Expense
-type SubModule = 'statement' | 'violators' | 'contributions' | 'expenses';
+type SubModule = 'statement' | 'violators' | 'fine_config' | 'contributions' | 'expenses';
 
 const EXPENSE_CATEGORIES = [
     'Office Supplies', 'Travel', 'Equipment', 'Software', 'Marketing',
@@ -23,9 +23,10 @@ const EXPENSE_CATEGORIES = [
 
 const TAB_CONFIG: { key: SubModule; label: string; icon: React.ReactNode }[] = [
     { key: 'statement', label: 'Dashboard', icon: <BarChart3 size={16} /> },
-    { key: 'violators', label: 'Phone Fines', icon: <PhoneOff size={16} /> },
+    { key: 'violators', label: 'Fines', icon: <MonitorStop size={16} /> },
     { key: 'contributions', label: 'Donations', icon: <HandHeart size={16} /> },
     { key: 'expenses', label: 'Expenses', icon: <ShoppingCart size={16} /> },
+    { key: 'fine_config', label: 'Fine Config', icon: <ShieldCheck size={16} /> },
 ];
 
 const uid = () => crypto.randomUUID?.() || Math.random().toString(36).slice(2);
@@ -120,11 +121,45 @@ const DashboardHeader: React.FC = () => (
 );
 
 // ─── STATEMENT (DASHBOARD) ───────────────────────────────────────────────────
-const Statement: React.FC<{ violations: Violation[]; contributions: Contribution[]; expenses: Expense[] }> = ({ violations, contributions, expenses }) => {
+const Statement: React.FC<{ violations: Violation[]; contributions: Contribution[]; expenses: Expense[]; fineTypes: FineType[] }> = ({ violations, contributions, expenses, fineTypes }) => {
     const totalFines = violations.reduce((s, v) => s + (v.paid ? v.amount : 0), 0);
     const totalContrib = contributions.reduce((s, c) => s + c.amount, 0);
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
     const balance = (totalFines + totalContrib) - totalExpenses;
+
+    const getFineTypeName = (fineTypeId?: string) => {
+        if (!fineTypeId) return 'Fine';
+        const ft = fineTypes.find(f => f.id === fineTypeId);
+        if (ft) return ft.name;
+        const seedFine = seedFineTypes.find(sf => sf.id === fineTypeId);
+        return seedFine ? seedFine.name : 'Fine';
+    };
+
+    const getFineTypeIcon = (fineTypeId?: string) => {
+        if (!fineTypeId) return <MonitorStop size={18} />;
+        const ft = fineTypes.find(f => f.id === fineTypeId);
+        const name = ft ? ft.name : '';
+        if (name.toLowerCase().includes('phone')) return <Phone size={18} />;
+        if (name.toLowerCase().includes('lateness')) return <Clock size={18} />;
+        if (name.toLowerCase().includes('absenteeism')) return <UserX size={18} />;
+        return <MonitorStop size={18} />;
+    };
+
+    const getFineTypeColor = (fineTypeId?: string) => {
+        if (!fineTypeId) return 'bg-orange-50 text-orange-500';
+        const ft = fineTypes.find(f => f.id === fineTypeId);
+        const name = ft ? ft.name : '';
+        if (name.toLowerCase().includes('phone')) return 'bg-orange-50 text-orange-500';
+        if (name.toLowerCase().includes('lateness')) return 'bg-amber-50 text-amber-600';
+        if (name.toLowerCase().includes('absenteeism')) return 'bg-rose-50 text-rose-600';
+        return 'bg-orange-50 text-orange-500';
+    };
+
+    const seedFineTypes: FineType[] = [
+        { id: 'phone-violation', name: 'Phone Violation', description: 'Using phone during work hours', default_amount: 5000, is_active: true, created_at: today() },
+        { id: 'lateness', name: 'Lateness', description: 'Arriving late to work', default_amount: 1000, is_active: true, created_at: today() },
+        { id: 'absenteeism', name: 'Absenteeism', description: 'Unauthorized absence from work', default_amount: 3000, is_active: true, created_at: today() }
+    ];
 
     // FIXED: Use actual data for chart instead of random data
     const chartData = useMemo(() => {
@@ -152,12 +187,12 @@ const Statement: React.FC<{ violations: Violation[]; contributions: Contribution
 
     const recentActivity = useMemo(() => {
         const all = [
-            ...violations.map(v => ({ type: 'violation' as const, title: `Phone Violation Fine`, sub: `From ${v.name} • Dept: ${v.department}`, amount: v.amount, sign: '+', date: v.date, icon: <PhoneOff size={18} />, colorClass: 'bg-orange-50 text-orange-500' })),
+            ...violations.map(v => ({ type: 'violation' as const, title: `${getFineTypeName(v.fine_type_id)} Fine`, sub: `From ${v.name} • Dept: ${v.department}`, amount: v.amount, sign: '+', date: v.date, icon: getFineTypeIcon(v.fine_type_id), colorClass: getFineTypeColor(v.fine_type_id) })),
             ...contributions.map(c => ({ type: 'contribution' as const, title: `Donation Received`, sub: `From ${c.anonymous ? 'Anonymous' : c.donorName}`, amount: c.amount, sign: '+', date: c.date, icon: <HandHeart size={18} />, colorClass: 'bg-emerald-50 text-emerald-600' })),
             ...expenses.map(e => ({ type: 'expense' as const, title: e.category, sub: `Desc: ${e.description} • Req: ${e.requestor}`, amount: e.amount, sign: '-', date: e.date, icon: <ShoppingCart size={18} />, colorClass: 'bg-rose-50 text-rose-500' })),
         ];
         return all.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
-    }, [violations, contributions, expenses]);
+    }, [violations, contributions, expenses, fineTypes]);
 
     return (
         <div className="space-y-6">
@@ -257,9 +292,21 @@ const TableShell: React.FC<{ title: string; onAdd: () => void; addText: string; 
     </div>
 );
 
-const PhoneViolators: React.FC<{ data: Violation[]; onAdd: (v: Violation) => void; onToggle: (id: string) => void; users: User[]; units: BusinessUnit[] }> = ({ data, onAdd, onToggle, users, units }) => {
+const PhoneViolators: React.FC<{ data: Violation[]; onAdd: (v: Violation) => void; onToggle: (id: string) => void; users: User[]; units: BusinessUnit[]; fineTypes: FineType[] }> = ({ data, onAdd, onToggle, users, units, fineTypes }) => {
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ name: '', department: '', amount: '' });
+    const [form, setForm] = useState({ name: '', department: '', amount: '', fineTypeId: '' });
+
+    const activeFineTypes = fineTypes.filter(ft => ft.is_active);
+
+    const handleFineTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const selectedId = e.target.value;
+        const selectedFine = fineTypes.find(ft => ft.id === selectedId);
+        setForm({
+            ...form,
+            fineTypeId: selectedId,
+            amount: selectedFine ? selectedFine.default_amount.toString() : form.amount
+        });
+    };
 
     const handleNameChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selectedName = e.target.value;
@@ -272,9 +319,9 @@ const PhoneViolators: React.FC<{ data: Violation[]; onAdd: (v: Violation) => voi
     };
 
     const handleSubmit = () => {
-        if (!form.name || !form.department || !form.amount) return;
-        onAdd({ id: uid(), name: form.name, department: form.department, amount: Number(form.amount), date: today(), paid: false });
-        setForm({ name: '', department: '', amount: '' }); setShowForm(false);
+        if (!form.name || !form.department || !form.amount || !form.fineTypeId) return;
+        onAdd({ id: uid(), name: form.name, department: form.department, amount: Number(form.amount), date: today(), paid: false, fine_type_id: form.fineTypeId });
+        setForm({ name: '', department: '', amount: '', fineTypeId: '' }); setShowForm(false);
     };
 
     return (
@@ -283,7 +330,14 @@ const PhoneViolators: React.FC<{ data: Violation[]; onAdd: (v: Violation) => voi
                 <AnimatePresence>
                     {showForm && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                            <div className="p-8 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+                            <div className="p-8 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 md:grid-cols-5 gap-6 items-end">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500">Violation Type</label>
+                                    <select value={form.fineTypeId} onChange={handleFineTypeChange} className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none">
+                                        <option value="" disabled>Select Type</option>
+                                        {activeFineTypes.map(ft => <option key={ft.id} value={ft.id}>{ft.name}</option>)}
+                                    </select>
+                                </div>
                                 <div className="space-y-2">
                                     <label className="text-xs font-bold text-slate-500">Identity Directory</label>
                                     <select value={form.name} onChange={handleNameChange} className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none">
@@ -519,6 +573,101 @@ const Expenses: React.FC<{ data: Expense[]; onAdd: (e: Expense) => void; users: 
     );
 };
 
+// ─── FINE CONFIGURATION (CRUD) ─────────────────────────────────────────────────
+const FineConfig: React.FC<{ data: FineType[]; onAdd: (ft: FineType) => void; onUpdate: (id: string, updates: Partial<FineType>) => void; onDelete: (id: string) => void }> = ({ data, onAdd, onUpdate, onDelete }) => {
+    const [showForm, setShowForm] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [form, setForm] = useState({ name: '', description: '', default_amount: '' });
+
+    const handleSubmit = () => {
+        if (!form.name || !form.default_amount) return;
+        if (editingId) {
+            onUpdate(editingId, { name: form.name, description: form.description, default_amount: Number(form.default_amount) });
+            setEditingId(null);
+        } else {
+            onAdd({ id: uid(), name: form.name, description: form.description, default_amount: Number(form.default_amount), is_active: true, created_at: today() });
+        }
+        setForm({ name: '', description: '', default_amount: '' });
+        setShowForm(false);
+    };
+
+    const handleEdit = (ft: FineType) => {
+        setEditingId(ft.id);
+        setForm({ name: ft.name, description: ft.description, default_amount: ft.default_amount.toString() });
+        setShowForm(true);
+    };
+
+    const handleToggleActive = (ft: FineType) => {
+        onUpdate(ft.id, { is_active: !ft.is_active });
+    };
+
+    return (
+        <div className="space-y-6">
+            <TableShell title="Fine Type Configuration" onAdd={() => { setShowForm(!showForm); setEditingId(null); setForm({ name: '', description: '', default_amount: '' }); }} addText={showForm ? 'Cancel' : 'Add Fine Type'}>
+                <AnimatePresence>
+                    {showForm && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                            <div className="p-8 bg-slate-50/50 border-b border-slate-100 grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500">Fine Type Name</label>
+                                    <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Lateness" className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:border-orange-500 outline-none" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500">Description</label>
+                                    <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Brief description" className="w-full px-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold focus:border-orange-500 outline-none" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-bold text-slate-500">Default Amount (₦)</label>
+                                    <CurrencyInput value={form.default_amount} onChange={(v) => setForm({ ...form, default_amount: v })} colorFocusClass="focus:border-orange-500 focus:ring-1 focus:ring-orange-500 bg-white" />
+                                </div>
+                                <button onClick={handleSubmit} className="w-full py-3.5 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-md">
+                                    {editingId ? 'Update' : 'Create'} Fine Type
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="border-b border-slate-100 bg-slate-50/50">
+                                {['Fine Type', 'Description', 'Default Amount', 'Status', 'Actions'].map(h => (
+                                    <th key={h} className="px-8 py-4 text-left text-xs font-bold text-slate-500">{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.map(ft => (
+                                <tr key={ft.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-8 py-4 text-sm font-bold text-slate-900">{ft.name}</td>
+                                    <td className="px-8 py-4 text-xs font-medium text-slate-500 max-w-[200px] truncate">{ft.description}</td>
+                                    <td className="px-8 py-4 text-sm font-extrabold text-slate-900">{fmt(ft.default_amount)}</td>
+                                    <td className="px-8 py-4">
+                                        <button onClick={() => handleToggleActive(ft)} className={`inline-flex px-3 py-1 rounded-full text-[11px] font-bold cursor-pointer transition-colors ${ft.is_active ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                                            {ft.is_active ? 'Active' : 'Inactive'}
+                                        </button>
+                                    </td>
+                                    <td className="px-8 py-4">
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => handleEdit(ft)} className="p-2 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors">
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button onClick={() => onDelete(ft.id)} className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {data.length === 0 && <tr><td colSpan={5} className="px-8 py-12 text-center text-slate-400 text-sm font-medium">No fine types configured. Add one to get started.</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            </TableShell>
+        </div>
+    );
+};
+
 // ─── MAIN FINANCIALS MODULE ──────────────────────────────────────────────────
 export const Financials: React.FC = () => {
     const [activeTab, setActiveTab] = useState<SubModule>('statement');
@@ -527,6 +676,7 @@ export const Financials: React.FC = () => {
     const [violations, setViolations] = useState<Violation[]>([]);
     const [contributions, setContributions] = useState<Contribution[]>([]);
     const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [fineTypes, setFineTypes] = useState<FineType[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     // Directory state
@@ -538,18 +688,24 @@ export const Financials: React.FC = () => {
         const loadData = async () => {
             console.log('[FINANCE_DEBUG] Loading finance data from Supabase...');
             try {
-                const [v, c, e, u, bu] = await Promise.all([
+                const [v, c, e, u, bu, ft] = await Promise.all([
                     getViolations(),
                     getContributions(),
                     getExpenses(),
                     getRegistryUsers(),
-                    getBusinessUnits()
+                    getBusinessUnits(),
+                    getFineTypes()
                 ]);
 
                 // Only use seed data in development if database is empty
                 setViolations(v.length > 0 ? v : DEV_ONLY_SEED_VIOLATIONS);
                 setContributions(c.length > 0 ? c : DEV_ONLY_SEED_CONTRIBUTIONS);
                 setExpenses(e.length > 0 ? e : DEV_ONLY_SEED_EXPENSES);
+                setFineTypes(ft.length > 0 ? ft : [
+                    { id: 'phone-violation', name: 'Phone Violation', description: 'Using phone during work hours', default_amount: 5000, is_active: true, created_at: today() },
+                    { id: 'lateness', name: 'Lateness', description: 'Arriving late to work', default_amount: 1000, is_active: true, created_at: today() },
+                    { id: 'absenteeism', name: 'Absenteeism', description: 'Unauthorized absence from work', default_amount: 3000, is_active: true, created_at: today() }
+                ]);
                 setUsers(u);
                 setUnits(bu);
 
@@ -590,7 +746,7 @@ export const Financials: React.FC = () => {
         if (violation) {
             const newPaidStatus = !violation.paid;
             setViolations(prev => prev.map(v => v.id === id ? { ...v, paid: newPaidStatus } : v));
-            await dbUpdateViolation(id, newPaidStatus);
+            await dbUpdateViolation({ ...violation, paid: newPaidStatus });
         }
     }, [violations]);
 
@@ -602,6 +758,24 @@ export const Financials: React.FC = () => {
     const addExpense = useCallback(async (e: Expense) => {
         setExpenses(prev => [e, ...prev]);
         await dbAddExpense(e);
+    }, []);
+
+    const addFineType = useCallback(async (ft: FineType) => {
+        setFineTypes(prev => [...prev, ft]);
+        await dbAddFineType(ft);
+    }, []);
+
+    const updateFineType = useCallback(async (id: string, updates: Partial<FineType>) => {
+        const existing = fineTypes.find(ft => ft.id === id);
+        if (existing) {
+            setFineTypes(prev => prev.map(ft => ft.id === id ? { ...ft, ...updates } : ft));
+            await dbUpdateFineType({ ...existing, ...updates });
+        }
+    }, [fineTypes]);
+
+    const deleteFineType = useCallback(async (id: string) => {
+        setFineTypes(prev => prev.filter(ft => ft.id !== id));
+        await dbDeleteFineType(id);
     }, []);
 
     if (isLoading) {
@@ -641,8 +815,9 @@ export const Financials: React.FC = () => {
                 <div>
                     <AnimatePresence mode="wait">
                         <motion.div key={activeTab} variants={pageVariants} initial="initial" animate="animate" exit="exit">
-                            {activeTab === 'statement' && <Statement violations={violations} contributions={contributions} expenses={expenses} />}
-                            {activeTab === 'violators' && <PhoneViolators data={violations} onAdd={addViolation} onToggle={toggleViolation} users={users} units={units} />}
+                            {activeTab === 'statement' && <Statement violations={violations} contributions={contributions} expenses={expenses} fineTypes={fineTypes} />}
+                            {activeTab === 'violators' && <PhoneViolators data={violations} onAdd={addViolation} onToggle={toggleViolation} users={users} units={units} fineTypes={fineTypes} />}
+                            {activeTab === 'fine_config' && <FineConfig data={fineTypes} onAdd={addFineType} onUpdate={updateFineType} onDelete={deleteFineType} />}
                             {activeTab === 'contributions' && <Contributions data={contributions} onAdd={addContribution} users={users} />}
                             {activeTab === 'expenses' && <Expenses data={expenses} onAdd={addExpense} users={users} />}
                         </motion.div>

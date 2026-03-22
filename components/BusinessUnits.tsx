@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Building2, Plus, Edit2, Trash2, Mail, User as UserIcon, Save, X, AlertTriangle, LoaderCircle, Users, Activity, Download, MoreVertical, Search, Bell, Network } from 'lucide-react';
-import { BusinessUnit, User } from '../types';
+import { BusinessUnit, User } from '../src/types';
 import { getBusinessUnits, saveBusinessUnits, getRegistryUsers, canManageBusinessUnits, logAudit } from '../utils';
 import { supabase } from '../supabaseClient';
 import { Select } from './ui/Select';
@@ -130,83 +130,76 @@ export const BusinessUnits: React.FC = () => {
   const staffDisplay = totalStaff >= 1000 ? (totalStaff / 1000).toFixed(1) + 'k' : totalStaff.toString();
 
   return (
-    <div className="h-full min-h-screen bg-[#F8FAFC]">
-      <div className="max-w-[1400px] mx-auto p-4 md:p-8 space-y-8 animate-fade-in font-sans">
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto p-6 space-y-6 animate-fade-in">
 
-        {/* Header & Title Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight leading-none mb-2">Corporate Units</h1>
-            <p className="text-sm font-medium text-slate-500">Manage organizational hierarchies, department leads, and unit communications.</p>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Corporate Units</h1>
+            <p className="text-sm text-slate-500 mt-1">Manage organizational hierarchies, department leads, and unit communications.</p>
           </div>
         </div>
 
-        {/* KPI/Stats Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-slate-200 flex items-center gap-4">
+          <div className="card p-5 flex items-center gap-4">
             <div className="w-11 h-11 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-              <Network size={18} className="stroke-[2.5]" />
+              <Network size={18} className="stroke-2" />
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Total Units</p>
-              <p className="text-xl font-bold text-slate-900 leading-none mt-1">{units.length}</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total Units</p>
+              <p className="text-xl font-bold text-slate-900">{units.length}</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-slate-200 flex items-center gap-4">
+          <div className="card p-5 flex items-center gap-4">
             <div className="w-11 h-11 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-              <Users size={18} className="stroke-[2.5]" />
+              <Users size={18} className="stroke-2" />
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Active Staff</p>
-              <p className="text-xl font-bold text-slate-900 leading-none mt-1">{staffDisplay}</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Active Staff</p>
+              <p className="text-xl font-bold text-slate-900">{staffDisplay}</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-slate-200 flex items-center gap-4">
+          <div className="card p-5 flex items-center gap-4">
             <div className="w-11 h-11 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
-              <Activity size={18} className="stroke-[2.5]" />
+              <Activity size={18} className="stroke-2" />
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Pending Reviews</p>
-              <p className="text-xl font-bold text-slate-900 leading-none mt-1">08</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Pending Reviews</p>
+              <p className="text-xl font-bold text-slate-900">0</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl px-5 py-4 shadow-sm border border-slate-200 flex items-center gap-4">
+          <div className="card p-5 flex items-center gap-4">
             <div className="w-11 h-11 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-              <Download size={18} className="stroke-[2.5]" />
+              <Download size={18} className="stroke-2" />
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Report Status</p>
-              <p className="text-sm font-bold text-slate-900 leading-tight mt-1">Sync Completed</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Report Status</p>
+              <p className="text-sm font-bold text-slate-900">Synced</p>
             </div>
           </div>
-
-          {/* Floating Add Button acting visually like part of the stats or separate layer but we put it as an extra card block for aesthetics or absolute? The design has it top right. We will float it below the KPIs if no space, but it fits nicely here */}
         </div>
 
-        {/* Subheader / Toolbar */}
-        <div className="flex justify-end mb-4">
-          <button onClick={startAdd} disabled={isAdding || editingId !== null || !canManage} className="flex items-center gap-2 px-5 py-2.5 bg-[#f97316] text-white rounded-xl text-sm font-bold shadow-md hover:bg-[#ea580c] transition-colors disabled:opacity-50">
-            <Plus size={18} className="stroke-[2.5]" /> New Unit
+        <div className="flex justify-end">
+          <button onClick={startAdd} disabled={isAdding || editingId !== null || !canManage} className="btn-primary">
+            <Plus size={18} /> New Unit
           </button>
         </div>
 
-        {/* Grid of Units */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
-          {/* Add/Edit Form Card (Placed first if active) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           <AnimatePresence>
             {(isAdding && tempUnit) && (
-              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white rounded-xl p-6 shadow-lg border-2 border-orange-500 relative col-span-1 md:col-span-2 xl:col-span-1 xl:row-span-2 self-start ring-4 ring-orange-500/10 z-20">
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card p-6 border-2 border-primary-500">
                 <h3 className="text-lg font-bold text-slate-900 mb-5">Initialize New Unit</h3>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 ml-1">Unit Name</label>
-                    <input type="text" value={tempUnit.name} onChange={(e) => setTempUnit({ ...tempUnit, name: e.target.value })} className="mt-1 w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all" placeholder="e.g. Global Operations" autoFocus />
+                    <label className="label">Unit Name</label>
+                    <input type="text" value={tempUnit.name} onChange={(e) => setTempUnit({ ...tempUnit, name: e.target.value })} className="input" placeholder="e.g. Global Operations" autoFocus />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-slate-400 ml-1">Assign Unit Head</label>
+                  <div>
+                    <label className="label">Assign Unit Head</label>
                     <div className="bg-slate-50 border border-slate-200 rounded-lg focus-within:ring-2 focus-within:ring-orange-500 focus-within:bg-white transition-all overflow-hidden">
                       <Select
                         value={tempUnit.head_user_id}

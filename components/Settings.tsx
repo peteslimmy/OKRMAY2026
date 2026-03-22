@@ -30,7 +30,8 @@ import {
   Lock,
   Unlock
 } from 'lucide-react';
-import { canConfigureSystem, canViewSettings, canViewAuditLogs, ALLOWED_DOMAINS, AUDIT_LOGS, exportAuditLogsToCSV, logAudit, addAllowedDomain, removeAllowedDomain, getGovernanceConfig, saveGovernanceConfig, GovernanceConfig, getSessionUser, testSMTPSettings } from '../utils';
+import { canConfigureSystem, canViewSettings, canViewAuditLogs, ALLOWED_DOMAINS, AUDIT_LOGS, exportAuditLogsToCSV, logAudit, addAllowedDomain, removeAllowedDomain, getGovernanceConfig, saveGovernanceConfig, getSessionUser, testSMTPSettings } from '../utils';
+import { GovernanceConfig } from '../src/types';
 
 export const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('4core_settings_tab') || 'audit');
@@ -218,21 +219,21 @@ export const Settings: React.FC = () => {
   );
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col gap-1">
-        <h2 className="text-3xl font-black text-slate-800 tracking-tighter uppercase leading-none">Governance Hub</h2>
-        <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-2">
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Governance Hub</h2>
+        <p className="text-sm text-slate-500 font-medium flex items-center gap-2">
           <ShieldCheck size={14} className="text-emerald-500" /> Platform Security & Identity Node
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 p-1.5 bg-white/50 backdrop-blur-md border border-slate-200 rounded-[4px] w-fit">
+      <div className="flex flex-wrap gap-2 p-1.5 bg-white border border-slate-200 rounded-xl w-fit">
         {tabs.map(tab => tab.check() && (
           <button
             key={tab.id}
             onClick={() => { setActiveTab(tab.id); setSaveSuccess(false); }}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-[4px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-primary-600 text-white shadow-xl shadow-primary-900/20' : 'text-slate-500 hover:text-slate-800 hover:bg-white/80'
-              }`}
+            className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold transition-all ${activeTab === tab.id ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'}`
+            }
           >
             {React.cloneElement(tab.icon as React.ReactElement<{ className?: string }>, { className: "w-4 h-4" })}
             {tab.label}
@@ -240,20 +241,20 @@ export const Settings: React.FC = () => {
         ))}
       </div>
 
-      <div className="bg-white/80 backdrop-blur-2xl p-10 rounded-[4px] border border-white/40 shadow-2xl">
+      <div className="card p-8">
         {activeTab === 'general' && (
-          <div className="space-y-8">
+          <div className="space-y-6">
             <div>
-              <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">Security Boundaries</h3>
-              <p className="text-xs text-slate-500 mt-1">Restrict access to validated corporate domains.</p>
+              <h3 className="text-lg font-semibold text-slate-900">Security Boundaries</h3>
+              <p className="text-sm text-slate-500 mt-1">Restrict access to validated corporate domains.</p>
             </div>
             <div className="flex flex-wrap gap-3 items-center">
               {domains.map(d => (
-                <span key={d} className="px-5 py-2.5 bg-white border border-slate-200 rounded-[4px] text-[11px] font-black text-slate-700 flex items-center gap-3 shadow-sm group">
+                <span key={d} className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-3 shadow-sm group">
                   <Mail size={12} className="text-primary-500" /> @{d}
                   <X
                     onClick={() => { if (confirm(`Revoke whitelist for @${d}?`)) { removeAllowedDomain(d); setDomains([...ALLOWED_DOMAINS]); logAudit('SYSTEM', 'Revoked domain whitelist', { domain: d }); setIsDirty(true); } }}
-                    className="w-3 h-3 text-slate-300 hover:text-rose-500 cursor-pointer transition-colors"
+                    className="w-3 h-3 text-slate-300 hover:text-red-500 cursor-pointer transition-colors"
                   />
                 </span>
               ))}

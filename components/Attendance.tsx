@@ -30,7 +30,7 @@ import {
   Area,
   AreaChart
 } from 'recharts';
-import { AttendanceStatus, AttendanceRecord } from '../types';
+import { AttendanceStatus, AttendanceRecord } from '../src/types';
 import { getAttendanceRecords } from '../utils';
 
 const MOCK_TREND_DATA = import.meta.env.DEV ? [

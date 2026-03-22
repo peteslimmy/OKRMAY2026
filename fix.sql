@@ -1,1 +1,0 @@
-DROP POLICY IF EXISTS "Allow service role insert profiles" ON profiles; CREATE POLICY "Allow authenticated users insert profiles" ON profiles FOR INSERT WITH CHECK \(auth.role\(\) = 'authenticated' OR auth.role\(\) = 'service_role'\);  

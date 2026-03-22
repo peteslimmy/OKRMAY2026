@@ -21,7 +21,7 @@ END;
 $ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
--- 1. VIOLATIONS TABLE (Phone Fines)
+-- 1. VIOLATIONS TABLE (Phone Fines, Lateness, Absenteeism)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS violations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -188,3 +188,42 @@ CREATE POLICY "Allow update own attendance" ON attendance
 -- SECURITY: Restrict DELETE to service_role only
 CREATE POLICY "Allow service role delete attendance" ON attendance
   FOR DELETE USING (auth.role() = 'service_role');
+
+-- ============================================================================
+-- 6. FINES_TYPES TABLE (Preset fine amounts for violations)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS fine_types (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  amount DECIMAL(15,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE fine_types ENABLE ROW LEVEL SECURITY;
+
+-- Allow authenticated users to read fine types
+CREATE POLICY "Allow authenticated read fine_types" ON fine_types
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+-- SECURITY: Only admins can insert/update/delete fine types
+CREATE POLICY "Allow admins manage fine_types" ON fine_types
+  FOR ALL USING (is_admin_user() OR auth.role() = 'service_role');
+
+-- Insert default fine types
+INSERT INTO fine_types (name, amount) VALUES
+  ('phone', 5000),
+  ('lateness', 3000),
+  ('absenteeism', 5000)
+ON CONFLICT (name) DO NOTHING;
+
+-- Add fine_type_id to violations table (migration)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'violations' AND column_name = 'fine_type_id') THEN
+    ALTER TABLE violations ADD COLUMN fine_type_id UUID REFERENCES fine_types(id);
+    -- Update existing violations to point to the phone fine type
+    UPDATE violations SET fine_type_id = (SELECT id FROM fine_types WHERE name = 'phone' LIMIT 1) WHERE fine_type_id IS NULL;
+    ALTER TABLE violations ALTER COLUMN fine_type_id SET NOT NULL;
+  END IF;
+END $$;

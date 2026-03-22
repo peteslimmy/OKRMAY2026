@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Target, TrendingUp, TrendingDown, ShieldCheck, Zap, Activity, Loader2, LineChart as LineChartIcon, ArrowRight, MoreVertical, Sparkles, BrainCircuit, FileText, Activity as PulseIcon, Building2, Users as UsersIcon, ChevronRight, Globe, Layers, Database } from 'lucide-react';
-import { KPICardProps, KeyResult, Activity as ActivityType, User, BUPerformanceDataPoint, UserRole, BusinessUnit, StrategicNote } from '../types';
+import { KPICardProps, KeyResult, Activity as ActivityType, User, BUPerformanceDataPoint, UserRole, BusinessUnit, Permission } from '../src/types';
 import { BUPerformanceMatrix } from './BUPerformanceMatrix';
-import { getCurrentQuarterInfo, getRegistryUsers, getBUPerformanceData, calculateGovernanceHealth, getSessionUser, getRegistryKeyResults, getBusinessUnits } from '../utils';
+import { getCurrentQuarterInfo, getRegistryUsers, getBUPerformanceData, calculateGovernanceHealth, getSessionUser, getRegistryKeyResults, getBusinessUnits, hasPermissionByRole } from '../utils';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine } from 'recharts';
 import { supabase } from '../supabaseClient';
 import DOMPurify from 'dompurify';
@@ -143,7 +143,7 @@ export const Dashboard: React.FC<{ selectedYear: number, selectedBu: string; sel
     return baseFiltered;
   }, [dbActivities, selectedWeek, selectedBu, currentUser]);
 
-  const governanceHealth = useMemo(() => calculateGovernanceHealth(filteredActivities), [filteredActivities]);
+  const governanceHealth = useMemo(() => calculateGovernanceHealth(), [filteredActivities]);
 
   const generateAiSynthesis = async () => {
     if (generatingAi || filteredActivities.length === 0) return;
@@ -212,15 +212,15 @@ export const Dashboard: React.FC<{ selectedYear: number, selectedBu: string; sel
   }, [trendData, dbKRs.length, filteredActivities.length, governanceHealth]);
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center h-[50vh] text-slate-400">
-      <Loader2 className="w-12 h-12 animate-spin text-primary-500 mb-6" />
-      <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400">Harvesting Intelligence...</h3>
+    <div className="flex flex-col items-center justify-center h-[50vh]">
+      <Loader2 className="w-10 h-10 animate-spin text-primary-600 mb-4" />
+      <p className="text-sm font-medium text-slate-500">Loading dashboard...</p>
     </div>
   );
 
   return (
-    <div className="space-y-8 pb-20">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-6">
+    <div className="space-y-6 pb-20">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <KPICard title="Execution Score" value={`${executionScore}%`} trendValue={12} trendUp={true} sparkData={sparklineData.execution} color="#f97316" />
         <KPICard title="Governance Health" value={`${governanceHealth}%`} trendValue={governanceHealth > 70 ? 5 : -2} trendUp={governanceHealth > 70} sparkData={sparklineData.compliance} color="#10b981" />
         <KPICard title="Active KRs" value={dbKRs.length.toString()} trendValue={5} trendUp={true} sparkData={sparklineData.krs} color="#3b82f6" />
@@ -229,7 +229,7 @@ export const Dashboard: React.FC<{ selectedYear: number, selectedBu: string; sel
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm animate-slide-up relative">
+        <div className="lg:col-span-2 card p-6 animate-slide-up relative">
           <div className="flex justify-between items-center mb-6">
             <div>
               <h3 className="text-lg font-bold text-slate-900">Execution Velocity & Projection</h3>
@@ -265,14 +265,14 @@ export const Dashboard: React.FC<{ selectedYear: number, selectedBu: string; sel
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="bg-slate-900 p-6 rounded-xl text-white flex flex-col justify-between relative overflow-hidden group shadow-lg border border-white/5 animate-slide-up">
+        <div className="bg-slate-900 p-6 rounded-xl text-white flex flex-col justify-between relative overflow-hidden group animate-slide-up">
           <div className="relative z-10">
             <span className="text-xs font-semibold uppercase tracking-widest text-primary-400 mb-3 block">Performance Synthesis</span>
             {aiBriefing ? (
               <div className="space-y-4 animate-fade-in">
                 <h3 className="text-lg font-bold leading-tight">Weekly Briefing</h3>
                 <div className="text-slate-300 text-sm leading-relaxed overflow-y-auto max-h-[160px] custom-scrollbar pr-2" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(aiBriefing.replace(/\n/g, '<br/>')) }} />
-                <button onClick={() => setAiBriefing(null)} className="text-xs font-semibold text-slate-500 uppercase tracking-widest hover:text-white transition-colors">Dismiss Intelligence</button>
+                <button onClick={() => setAiBriefing(null)} className="text-xs font-semibold text-slate-400 uppercase tracking-widest hover:text-white transition-colors">Dismiss</button>
               </div>
             ) : (
               <>
@@ -281,7 +281,7 @@ export const Dashboard: React.FC<{ selectedYear: number, selectedBu: string; sel
                 <button
                   onClick={generateAiSynthesis}
                   disabled={generatingAi || filteredActivities.length === 0}
-                  className="mt-6 w-full py-3 bg-white text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary-500 hover:text-white transition-all shadow-sm flex items-center justify-center gap-2"
+                  className="mt-6 w-full py-3 bg-white text-slate-900 rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary-500 hover:text-white transition-all flex items-center justify-center gap-2"
                 >
                   {generatingAi ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                   {generatingAi ? 'Processing...' : 'Synthesize Performance'}
@@ -296,11 +296,11 @@ export const Dashboard: React.FC<{ selectedYear: number, selectedBu: string; sel
         <BUPerformanceMatrix selectedBuId={selectedBu} selectedWeek={selectedWeek} />
       </div>
 
-      {/* NEW: Governance Registry Explorer for Visibility */}
-      <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-card animate-slide-up mt-12">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 pb-8 border-b border-slate-100">
+      {/* Governance Registry Explorer */}
+      <div className="card p-8 animate-slide-up">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 pb-6 border-b border-slate-100">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Governance Registry Explorer</h2>
+            <h2 className="text-xl font-bold text-slate-900 tracking-tight">Governance Registry Explorer</h2>
             <p className="text-sm text-slate-500 mt-1.5 font-medium">Diagnostic overview of operational entities, strategic roadmaps, and global identities.</p>
           </div>
           <div className="flex items-center gap-2.5 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">

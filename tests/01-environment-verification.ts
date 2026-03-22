@@ -16,9 +16,9 @@ import dns from 'dns';
 
 // Configuration
 const CONFIG = {
-  SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://ojuqujjkrmgplqxnmpxe.supabase.co',
+  SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://pvzecbcpuhmfytfdonfc.supabase.co',
   SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || '',
-  DOMAIN: 'ojuqujjkrmgplqxnmpxe.supabase.co',
+  DOMAIN: 'pvzecbcpuhmfytfdonfc.supabase.co',
   TIMEOUT: 10000
 };
 

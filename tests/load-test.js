@@ -20,7 +20,7 @@ const apiLatency = new Trend('api_latency');
 const authFailures = new Counter('auth_failures');
 
 // Configuration
-const BASE_URL = __ENV.BASE_URL || 'https://ojuqujjkrmgplqxnmpxe.supabase.co';
+const BASE_URL = __ENV.BASE_URL || 'https://pvzecbcpuhmfytfdonfc.supabase.co';
 const ANON_KEY = __ENV.ANON_KEY || '';
 const TEST_EMAIL = __ENV.TEST_EMAIL || 'test@example.com';
 const TEST_PASSWORD = __ENV.TEST_PASSWORD || 'TestPass!2026';

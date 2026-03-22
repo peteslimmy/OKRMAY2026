@@ -8,6 +8,7 @@ const getEnv = (key: string, fallback: string = ''): string => {
 // Use placeholder values if env vars not set - app will work in demo mode
 const supabaseUrl = getEnv('VITE_SUPABASE_URL') || 'https://placeholder.supabase.co';
 const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || 'placeholder-key';
+const supabaseServiceKey = getEnv('VITE_SUPABASE_SERVICE_KEY') || '';
 
 // SECURITY: Throw error in production if credentials are missing
 if (supabaseUrl.includes('placeholder') && import.meta.env.PROD) {
@@ -26,6 +27,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
   }
 });
+
+// Admin client for privileged operations (user creation, etc.)
+export const supabaseAdmin = supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      }
+    })
+  : null;
 
 export const checkConnection = async () => {
   try {

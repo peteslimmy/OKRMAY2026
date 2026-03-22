@@ -1,10 +1,43 @@
 
-import { Search, UserPlus, MoreVertical, Mail, Briefcase, Shield, X, Check, Ban, RefreshCw, FileWarning, Edit2, Trash2, Filter, AlertTriangle, UploadCloud, FileText, Trash, LoaderCircle, KeyRound, Eye, EyeOff, Users, Save, CheckCircle2, AlertCircle, ShieldAlert, UserCheck, LayoutGrid, ListFilter, ChevronDown, Activity, History, Download, DatabaseZap, Plus, Bell, HelpCircle, ShieldCheck } from 'lucide-react';
+import { Search, UserPlus, MoreVertical, Mail, Briefcase, Shield, X, Check, Ban, RefreshCw, FileWarning, Edit2, Trash2, Filter, AlertTriangle, UploadCloud, FileText, Trash, LoaderCircle, KeyRound, Eye, EyeOff, Users, Save, CheckCircle2, AlertCircle, ShieldAlert, UserCheck, LayoutGrid, ListFilter, ChevronDown, Activity, History, Download, DatabaseZap, Plus, Bell, HelpCircle, ShieldCheck, Lock, Unlock } from 'lucide-react';
 import React, { useState, useMemo, useEffect } from 'react';
-import { getStoredUsers, saveStoredUsers, logAudit, getBusinessUnits, getSessionUser, canManageUsers as checkCanManageUsers, generateLocalUUID, getRegistryUsers, triggerWelcomeEmail } from '../utils';
-import { User, UserRole, UserStatus, BusinessUnit } from '../types';
-import { supabase } from '../supabaseClient';
+import { getStoredUsers, saveStoredUsers, logAudit, getBusinessUnits, getSessionUser, canManageUsers as checkCanManageUsers, generateLocalUUID, getRegistryUsers, triggerWelcomeEmail, checkPermission, hasPermissionByRole, getUserPermissions } from '../utils';
+import { User, UserRole, UserStatus, BusinessUnit, Permission } from '../src/types';
+import { supabase, supabaseAdmin } from '../supabaseClient';
 import { Select } from './ui/Select';
+
+// Simulation mode for development
+const SIMULATE_USER_CREATION = !import.meta.env.PROD;
+
+const simulateUserInsert = async (user: User): Promise<{ success: boolean; error?: any }> => {
+  console.log('[SIMULATION] Creating user:', user.email);
+  
+  // Get existing simulated users
+  const storedUsers = localStorage.getItem('simulated_users');
+  const existingUsers: User[] = storedUsers ? JSON.parse(storedUsers) : [];
+  
+  // Check for duplicates
+  if (existingUsers.some(u => u.email === user.email)) {
+    return { success: false, error: { message: 'User already exists' } };
+  }
+  
+  // Add new user
+  existingUsers.push(user);
+  localStorage.setItem('simulated_users', JSON.stringify(existingUsers));
+  
+  console.log('[SIMULATION] User created successfully:', user.email);
+  return { success: true };
+};
+
+// Generate a secure temporary password
+const generateTempPassword = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+  let password = '';
+  for (let i = 0; i < 16; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+};
 
 export const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -21,6 +54,14 @@ export const UserManagement: React.FC = () => {
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [successFeedback, setSuccessFeedback] = useState<string | null>(null);
 
+  // RBAC: Permission states
+  const [userPermissions, setUserPermissions] = useState<Permission[]>([]);
+  const [permViewUsers, setPermViewUsers] = useState(false);
+  const [permCreateUsers, setPermCreateUsers] = useState(false);
+  const [permEditUsers, setPermEditUsers] = useState(false);
+  const [permDeleteUsers, setPermDeleteUsers] = useState(false);
+  const [permAssignRoles, setPermAssignRoles] = useState(false);
+
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [bulkRole, setBulkRole] = useState<UserRole>(UserRole.Viewer);
@@ -29,16 +70,29 @@ export const UserManagement: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
-      const [allUsers, allBUs, permission, sessionUser] = await Promise.all([
+      const sessionUser = await getSessionUser();
+      
+      const [allUsers, allBUs, permission] = await Promise.all([
         getRegistryUsers(),
         getBusinessUnits(),
-        checkCanManageUsers(),
-        getSessionUser()
+        checkCanManageUsers()
       ]);
+      
       setUsers(allUsers);
       setAvailableBUs(allBUs);
       setCanManageUsers(permission);
       setCurrentUser(sessionUser);
+
+      // RBAC: Load user permissions
+      if (sessionUser) {
+        const perms = getUserPermissions(sessionUser.role);
+        setUserPermissions(perms);
+        setPermViewUsers(hasPermissionByRole(sessionUser.role, Permission.USERS_VIEW));
+        setPermCreateUsers(hasPermissionByRole(sessionUser.role, Permission.USERS_CREATE));
+        setPermEditUsers(hasPermissionByRole(sessionUser.role, Permission.USERS_EDIT));
+        setPermDeleteUsers(hasPermissionByRole(sessionUser.role, Permission.USERS_DELETE));
+        setPermAssignRoles(hasPermissionByRole(sessionUser.role, Permission.USERS_ASSIGN_ROLE));
+      }
 
       const storedHistory = localStorage.getItem('user_search_history');
       if (storedHistory) setSearchHistory(JSON.parse(storedHistory));
@@ -85,6 +139,13 @@ export const UserManagement: React.FC = () => {
 
   const handleBulkRoleUpdate = async () => {
     if (selectedUserIds.size === 0) return;
+    
+    // RBAC: Check permission
+    if (!permAssignRoles) {
+      alert("Access Denied: You don't have permission to assign roles.");
+      return;
+    }
+    
     setIsSubmitting(true);
     try {
       const updates = Array.from(selectedUserIds).map(id => ({
@@ -228,9 +289,7 @@ export const UserManagement: React.FC = () => {
     email: '',
     department: '',
     role: UserRole.Viewer as UserRole,
-    avatarUrl: '',
-    region: 'US-East-1',
-    subsystem: 'Core Registry'
+    avatarUrl: ''
   });
 
   const buHeadIds = useMemo(() => {
@@ -276,9 +335,7 @@ export const UserManagement: React.FC = () => {
       email: '',
       department: '',
       role: UserRole.Viewer,
-      avatarUrl: '',
-      region: 'US-East-1',
-      subsystem: 'Core Registry'
+      avatarUrl: ''
     });
     setEditingId(null);
   };
@@ -301,6 +358,16 @@ export const UserManagement: React.FC = () => {
   const handleSaveUser = async () => {
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.department) {
       alert("Validation Error: Please fill in all required fields.");
+      return;
+    }
+
+    // RBAC: Check create/edit permissions
+    if (editingId && !permEditUsers) {
+      alert("Access Denied: You don't have permission to edit users.");
+      return;
+    }
+    if (!editingId && !permCreateUsers) {
+      alert("Access Denied: You don't have permission to create users.");
       return;
     }
 
@@ -328,8 +395,51 @@ export const UserManagement: React.FC = () => {
         await logAudit('UPDATE', `Modified user identity: ${formData.email}`, { targetId: editingId });
         triggerFeedback("Identity record synchronized.");
       } else {
+        const tempPassword = generateTempPassword();
+        
+        // Step 1: Create auth user via Supabase Admin API
+        let authUserId: string | null = null;
+        let inviteError: string | null = null;
+        
+        try {
+          console.log('[USER_MGMT] Creating auth user for:', formData.email);
+          
+          // Use Supabase Admin client if available
+          const adminClient = supabaseAdmin;
+          
+          if (!adminClient) {
+            console.warn('[USER_MGMT] Supabase Admin client not configured (missing VITE_SUPABASE_SERVICE_KEY)');
+            console.log('[USER_MGMT] Profile will be created without auth user. User cannot login until auth is set up.');
+          } else {
+            // Use Supabase Admin API to create user
+            const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
+              email: formData.email,
+              password: tempPassword,
+              email_confirm: true,
+              user_metadata: {
+                first_name: formData.firstName,
+                last_name: formData.lastName,
+                full_name: `${formData.firstName} ${formData.lastName}`
+              }
+            });
+            
+            if (authError) {
+              console.error('[USER_MGMT] Auth creation error:', authError);
+              inviteError = authError.message;
+            } else if (authData?.user) {
+              authUserId = authData.user.id;
+              console.log('[USER_MGMT] Auth user created:', authData.user.id);
+            }
+          }
+        } catch (e: any) {
+          console.error('[USER_MGMT] Auth creation exception:', e);
+          inviteError = e.message || 'Failed to create auth user';
+        }
+        
+        // Step 2: Create profile record
         const newUser: User = {
-          id: crypto.randomUUID(),
+          id: authUserId || crypto.randomUUID(),
+          auth_id: authUserId || undefined,
           firstName: formData.firstName,
           lastName: formData.lastName,
           name: `${formData.firstName} ${formData.lastName}`,
@@ -339,13 +449,59 @@ export const UserManagement: React.FC = () => {
           avatarUrl: formData.avatarUrl || `https://ui-avatars.com/api/?name=${formData.firstName}+${formData.lastName}&background=f97316&color=fff&size=64&bold=true`,
           status: UserStatus.Active,
           mustChangePassword: true,
-          // Store provisioning metadata if needed in audit
         };
+        
+        // Try Supabase insert first, fallback to simulation in dev
+        let insertSuccess = false;
+        let insertError: any = null;
+        
         const { error } = await supabase.from('profiles').insert([newUser]);
-        if (error) throw error;
-        await logAudit('CREATE', `Initialized identity node: ${newUser.email} in ${formData.region}`, { targetId: newUser.id, region: formData.region, subsystem: formData.subsystem });
-        await triggerWelcomeEmail(newUser);
-        triggerFeedback(`Node registered. Identity authorized.`);
+        
+        if (error) {
+          console.warn('[USER_MGMT] Supabase insert failed, checking simulation mode:', error.message);
+          
+          if (SIMULATE_USER_CREATION) {
+            const simResult = await simulateUserInsert(newUser);
+            if (simResult.success) {
+              insertSuccess = true;
+              console.log('[USER_MGMT] User created via simulation:', newUser.email);
+            } else {
+              insertError = simResult.error;
+            }
+          } else {
+            insertError = error;
+          }
+        } else {
+          insertSuccess = true;
+        }
+        
+        if (!insertSuccess && insertError) {
+          console.error('[USER_MGMT] Insert error details:', {
+            code: insertError.code,
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint
+          });
+          
+          if (insertError.code === '42501' || insertError.message?.includes('RLS')) {
+            throw new Error('Permission Denied: RLS policy prevents insertion. Please run the SQL policies from the terminal.');
+          } else if (insertError.code === '23505' || insertError.message?.includes('already exists')) {
+            throw new Error('Duplicate Entry: A user with this email already exists.');
+          }
+          throw insertError;
+        }
+        
+        if (insertSuccess) {
+          await logAudit('CREATE', `Initialized identity node: ${newUser.email}`, { targetId: newUser.id, auth_id: newUser.auth_id });
+          
+          // Show success message with auth status
+          if (authUserId) {
+            triggerFeedback(`✅ User created: ${newUser.email}. Share temp password with user.`);
+            console.log(`[USER_MGMT] Temp password for ${newUser.email}: ${tempPassword}`);
+          } else {
+            triggerFeedback(`⚠️ Profile created (no auth). Add VITE_SUPABASE_SERVICE_KEY for full user creation.`);
+          }
+        }
       }
       setIsModalOpen(false);
       resetForm();
@@ -522,12 +678,18 @@ export const UserManagement: React.FC = () => {
               <HelpCircle size={20} />
             </button>
             <div className="w-px h-8 bg-slate-200 mx-2"></div>
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-primary-500/20 hover:bg-primary-700 transition-all hover:translate-y-[-2px] active:translate-y-0"
-            >
-              <Plus size={18} /> New Identity
-            </button>
+            {permCreateUsers ? (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-primary-500/20 hover:bg-primary-700 transition-all hover:translate-y-[-2px] active:translate-y-0"
+              >
+                <Plus size={18} /> New Identity
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-6 py-3 bg-slate-200 text-slate-400 rounded-xl text-sm font-bold cursor-not-allowed" title="Insufficient permissions: USERS_CREATE required">
+                <Lock size={16} /> No Create Access
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -538,11 +700,11 @@ export const UserManagement: React.FC = () => {
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Total Identities</p>
           <div className="flex items-end justify-between">
             <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">{users.length.toLocaleString()}</h3>
-            <div className="px-2 py-1 bg-emerald-50 text-emerald-600 text-[10px] font-black rounded-lg border border-emerald-100">+12%</div>
+            <span className="badge-success">+12%</span>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+        <div className="card p-6">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Active Now</p>
           <div className="flex items-end justify-between">
             <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">
@@ -561,29 +723,28 @@ export const UserManagement: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+        <div className="card p-6">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Pending Review</p>
           <div className="flex items-end justify-between">
-            <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">28</h3>
-            <div className="px-2 py-1 bg-amber-50 text-amber-600 text-[10px] font-black rounded-lg border border-amber-100">Action Req.</div>
+            <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">0</h3>
+            <span className="badge-warning">Action Req.</span>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-card hover:shadow-card-hover transition-all">
+        <div className="card p-6">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">Suspended</p>
           <div className="flex items-end justify-between">
             <h3 className="text-3xl font-black text-slate-900 leading-none tracking-tight">
               {users.filter(u => u.status !== UserStatus.Active).length}
             </h3>
-            <div className="px-2 py-1 bg-slate-50 text-slate-400 text-[10px] font-black rounded-lg border border-slate-100">-2%</div>
+            <span className="badge-neutral">-2%</span>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-card overflow-hidden transition-all hover:shadow-card-hover">
-        {/* Table Controls */}
-        <div className="flex flex-col md:flex-row items-center justify-between px-10 py-6 border-b border-slate-100 gap-6">
-          <div className="flex items-center gap-4">
+      <div className="card overflow-hidden">
+        <div className="flex flex-col md:flex-row items-center justify-between px-8 py-6 border-b border-slate-100 gap-4">
+          <div className="flex items-center gap-3">
             <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200">
               <button
                 onClick={() => setFilterRole('all')}
@@ -598,29 +759,29 @@ export const UserManagement: React.FC = () => {
                 External
               </button>
             </div>
-            <button title="Filter Results" className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-slate-600 shadow-sm transition-all">
+            <button title="Filter Results" className="btn-icon">
               <Filter size={18} />
             </button>
-            {selectedUserIds.size > 0 && (
-              <button onClick={() => setIsBulkModalOpen(true)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all bg-slate-900 text-white shadow-lg shadow-slate-900/10 active:scale-95">
+            {selectedUserIds.size > 0 && permAssignRoles && (
+              <button onClick={() => setIsBulkModalOpen(true)} className="btn-primary">
                 Bulk Role ({selectedUserIds.size})
               </button>
             )}
-            <button onClick={() => setIsImportModalOpen(true)} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-primary-600 shadow-sm transition-all" title="Bulk Provisioning">
-              <UploadCloud size={18} />
-            </button>
+            {selectedUserIds.size > 0 && !permAssignRoles && (
+              <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-bold bg-slate-100 text-slate-400">
+                <Lock size={14} /> No Bulk Access
+              </div>
+            )}
+            {permCreateUsers && (
+              <button onClick={() => setIsImportModalOpen(true)} className="btn-icon" title="Bulk Provisioning">
+                <UploadCloud size={18} />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Show:</span>
-              <button className="flex items-center gap-1.5 text-primary-600 text-sm font-bold group">
-                {filterStatus === 'all' ? 'Active Records' : filterStatus}
-                <ChevronDown size={14} className="group-hover:translate-y-0.5 transition-transform" />
-              </button>
-            </div>
-            <button onClick={() => downloadCsvTemplate()} className="flex items-center gap-2.5 px-4 py-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 text-xs font-bold uppercase tracking-widest transition-all">
-              <Download size={16} /> <span className="hidden sm:inline">Export CSV</span>
+          <div className="flex items-center gap-4">
+            <button onClick={() => downloadCsvTemplate()} className="btn-ghost text-sm">
+              <Download size={16} /> Export
             </button>
           </div>
         </div>
@@ -708,44 +869,55 @@ export const UserManagement: React.FC = () => {
                     </td>
                     <td className="py-6 px-10 text-right">
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => {
-                            setEditingId(user.id);
-                            setFormData({
-                              firstName: user.firstName,
-                              lastName: user.lastName,
-                              email: user.email,
-                              department: user.department,
-                              role: user.role,
-                              avatarUrl: user.avatarUrl || ''
-                            });
-                            setIsModalOpen(true);
-                          }}
-                          className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
-                          title="Edit"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setUserToModifyStatus(user);
-                            setIsSuspending(true);
-                          }}
-                          className={`p-2 rounded-lg transition-all ${user.status === UserStatus.Active
-                            ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                            : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
-                            }`}
-                          title={user.status === UserStatus.Active ? 'Freeze' : 'Restore'}
-                        >
-                          {user.status === UserStatus.Active ? <Ban size={16} /> : <Check size={16} />}
-                        </button>
-                        <button
-                          onClick={() => setUserToDelete(user)}
-                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                          title="Purge"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {permEditUsers && (
+                          <button
+                            onClick={() => {
+                              setEditingId(user.id);
+                              setFormData({
+                                firstName: user.firstName,
+                                lastName: user.lastName,
+                                email: user.email,
+                                department: user.department,
+                                role: user.role,
+                                avatarUrl: user.avatarUrl || ''
+                              });
+                              setIsModalOpen(true);
+                            }}
+                            className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all"
+                            title="Edit"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                        )}
+                        {permEditUsers && (
+                          <button
+                            onClick={() => {
+                              setUserToModifyStatus(user);
+                              setIsSuspending(true);
+                            }}
+                            className={`p-2 rounded-lg transition-all ${user.status === UserStatus.Active
+                              ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                              : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                              }`}
+                            title={user.status === UserStatus.Active ? 'Freeze' : 'Restore'}
+                          >
+                            {user.status === UserStatus.Active ? <Ban size={16} /> : <Check size={16} />}
+                          </button>
+                        )}
+                        {permDeleteUsers && (
+                          <button
+                            onClick={() => setUserToDelete(user)}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                            title="Purge"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                        {!permEditUsers && (
+                          <div className="flex items-center gap-1 text-slate-300">
+                            <Lock size={14} />
+                          </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -982,43 +1154,6 @@ export const UserManagement: React.FC = () => {
                     />
                   </div>
 
-                  <div className="w-full h-px bg-slate-100 my-2"></div>
-
-                  <div className="space-y-4">
-                    <div className="bg-primary-50/50 p-4 rounded-2xl border border-primary-100">
-                      <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <DatabaseZap size={12} /> Provisioning Parameters
-                      </h4>
-                      <div className="grid grid-cols-1 gap-4">
-                        <Select
-                          label="Provisioning Region"
-                          value={formData.region}
-                          onChange={(val) => setFormData({ ...formData, region: val as string })}
-                          options={[
-                            { value: 'US-East-1', label: 'US-East-1 (N. Virginia)' },
-                            { value: 'EU-West-1', label: 'EU-West-1 (Ireland)' },
-                            { value: 'AP-South-1', label: 'AP-South-1 (Mumbai)' },
-                            { value: 'AF-South-1', label: 'AF-South-1 (Lagos Edge)' },
-                          ]}
-                          className="w-full"
-                        />
-                        <Select
-                          label="Authorized Subsystem"
-                          value={formData.subsystem}
-                          onChange={(val) => setFormData({ ...formData, subsystem: val as string })}
-                          options={[
-                            { value: 'Core Registry', label: 'Core Registry (Identity)' },
-                            { value: 'Financial Ops', label: 'Financial Ops (Tactical)' },
-                            { value: 'Strategic Logic', label: 'Strategic Logic (Neural)' },
-                            { value: 'Audit Protocol', label: 'Audit Protocol (Watchdog)' },
-                          ]}
-                          className="w-full"
-                        />
-                      </div>
-                    </div>
-
-                    {!editingId && null}
-                  </div>
                 </div>
               </div>
             </div>

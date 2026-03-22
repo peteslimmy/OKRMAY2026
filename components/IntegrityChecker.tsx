@@ -35,7 +35,7 @@ import {
   Lock
 } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
-import { Activity, Task, TaskStatus, UserRole } from '../types';
+import { Activity, Task, TaskStatus, UserRole } from '../src/types';
 import { logAudit, getWATTime, getCurrentWeekNumber, generateLocalUUID, getSessionUser, calculateActivityScore } from '../utils';
 import { supabase } from '../supabaseClient';
 import { Select } from './ui/Select';
@@ -140,7 +140,7 @@ export const IntegrityChecker: React.FC = () => {
           castedTaskIds.includes(t.id) ? { ...t, status: TaskStatus.NotDone } : t
         );
 
-        let newScore = calculateActivityScore(updatedTasks, activity.week, activity.year);
+        let newScore = calculateActivityScore(updatedTasks);
 
         if (shouldApply) {
           newScore = Math.max(0, newScore - (penaltyConfig * castedTaskIds.length)); // Cumulative penalty for bulk

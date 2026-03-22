@@ -1,177 +1,176 @@
-# Supabase CLI
+# 4CORE Weekly OKR Platform
 
-[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
-](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
+A comprehensive OKR (Objectives & Key Results) management system for tracking organizational performance, weekly reporting, and governance.
 
-[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
+## Features
 
-This repository contains all the functionality for Supabase CLI.
+- **Weekly Reporting Engine** - Track activities, tasks, and progress across business units
+- **OKR Management** - Create and manage Key Results with quarterly planning
+- **Business Units Dashboard** - Monitor performance across departments
+- **Role-Based Access Control (RBAC)** - Granular permissions with 26 predefined permissions
+- **User Management** - Complete identity and access management
+- **Financial Tracking** - Violations, contributions, and expense management
+- **Attendance System** - Meeting attendance tracking
+- **Governance Controls** - Configurable lock policies and security settings
+- **AI-Powered Insights** - Strategic briefings using Google Gemini
 
-- [x] Running Supabase locally
-- [x] Managing database migrations
-- [x] Creating and deploying Supabase Functions
-- [x] Generating types directly from your database schema
-- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
+## Tech Stack
 
-## Getting started
+- **Frontend**: React 19 + TypeScript
+- **Styling**: Tailwind CSS
+- **Backend**: Supabase (PostgreSQL + Auth + Edge Functions)
+- **Charts**: Recharts
+- **Animations**: Framer Motion
+- **Icons**: Lucide React
 
-### Install the CLI
+## Project Structure
 
-Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
+```
+src/
+├── types/              # TypeScript type definitions
+│   └── index.ts
+├── styles/             # CSS and design system
+│   └── design-system.css
+├── components/         # React components
+│   ├── ui/             # Reusable UI primitives
+│   ├── Auth.tsx        # Authentication
+│   ├── Dashboard.tsx   # Main dashboard
+│   ├── ReportModule.tsx # Weekly reporting
+│   ├── UserManagement.tsx
+│   ├── BusinessUnits.tsx
+│   ├── BusinessObjectives.tsx
+│   ├── Financials.tsx
+│   ├── Attendance.tsx
+│   ├── Settings.tsx
+│   └── IntegrityChecker.tsx
+├── utils.ts            # Utility functions
+├── supabaseClient.ts   # Supabase client
+└── App.tsx             # Main application
+
+tests/                   # Test suites
+├── 01-environment-verification.ts
+├── 02-authentication.ts
+├── 03-authorization.ts
+├── 04-api-security.ts
+└── 07-security-headers.ts
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Supabase account
+
+### Installation
 
 ```bash
-npm i supabase --save-dev
+# Clone the repository
+git clone <repo-url>
+cd OKR2026-feb
+
+# Install dependencies
+npm install
+
+# Copy environment variables
+cp .env.example .env
+# Edit .env with your Supabase credentials
+
+# Start development server
+npm run dev
 ```
 
-When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
+### Environment Variables
 
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_SERVICE_KEY=your-service-role-key
+VITE_OPENROUTER_API_KEY=your-openrouter-key
 ```
-NODE_OPTIONS=--no-experimental-fetch yarn add supabase
+
+## Design System
+
+The application uses a consistent design system with reusable CSS classes:
+
+### Typography
+```css
+.heading-1, .heading-2, .heading-3  /* Headings */
+.text-body, .text-caption, .text-label  /* Body text */
 ```
 
-> **Note**
-For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
+### Buttons
+```css
+.btn-primary   /* Primary action */
+.btn-secondary /* Secondary action */
+.btn-outline   /* Outlined button */
+.btn-ghost     /* Ghost button */
+.btn-danger    /* Destructive action */
+.btn-success   /* Success action */
+```
 
-<details>
-  <summary><b>macOS</b></summary>
+### Components
+```css
+.card          /* Card container */
+.badge-success /* Success badge */
+.badge-warning /* Warning badge */
+.badge-danger  /* Danger badge */
+.input         /* Form input */
+.select        /* Select dropdown */
+```
 
-  Available via [Homebrew](https://brew.sh). To install:
+## Role-Based Access Control
 
-  ```sh
-  brew install supabase/tap/supabase
-  ```
+| Role | Permissions |
+|------|------------|
+| **Viewer** | View activities, KR, reports |
+| **Manager** | + Create/edit activities, advanced reports |
+| **Director** | + Delete, KR management, executive reports |
+| **Admin** | + User management, governance config |
+| **SuperAdmin** | Full access |
 
-  To install the beta release channel:
-  
-  ```sh
-  brew install supabase/tap/supabase-beta
-  brew link --overwrite supabase-beta
-  ```
-  
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Windows</b></summary>
-
-  Available via [Scoop](https://scoop.sh). To install:
-
-  ```powershell
-  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-  scoop install supabase
-  ```
-
-  To upgrade:
-
-  ```powershell
-  scoop update supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Linux</b></summary>
-
-  Available via [Homebrew](https://brew.sh) and Linux packages.
-
-  #### via Homebrew
-
-  To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-
-  #### via Linux packages
-
-  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
-
-  ```sh
-  sudo apk add --allow-untrusted <...>.apk
-  ```
-
-  ```sh
-  sudo dpkg -i <...>.deb
-  ```
-
-  ```sh
-  sudo rpm -i <...>.rpm
-  ```
-
-  ```sh
-  sudo pacman -U <...>.pkg.tar.zst
-  ```
-</details>
-
-<details>
-  <summary><b>Other Platforms</b></summary>
-
-  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
-
-  ```sh
-  go install github.com/supabase/cli@latest
-  ```
-
-  Add a symlink to the binary in `$PATH` for easier access:
-
-  ```sh
-  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
-  ```
-
-  This works on other non-standard Linux distros.
-</details>
-
-<details>
-  <summary><b>Community Maintained Packages</b></summary>
-
-  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
-  To install in your working directory:
-
-  ```bash
-  pkgx install supabase
-  ```
-
-  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
-</details>
-
-### Run the CLI
+## Testing
 
 ```bash
-supabase bootstrap
+# Environment verification
+npm run test:env
+
+# Authentication tests
+npm run test:auth
+
+# Authorization tests  
+npm run test:authz
+
+# Security tests
+npm run test:security
+
+# Run all tests
+npm run test:all
 ```
 
-Or using npx:
+## Scripts
 
-```bash
-npx supabase bootstrap
-```
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm run build:verify` | Build with verification |
+| `npm run preview` | Preview production build |
+| `npm run test:env` | Environment verification |
+| `npm run test:auth` | Authentication tests |
+| `npm run lint` | Run ESLint |
 
-The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
+## Security
 
-## Docs
+- Row-Level Security (RLS) policies on all tables
+- JWT-based authentication
+- Password breach detection via HaveIBeenPwned API
+- Rate limiting on authentication
+- XSS prevention via DOMPurify
+- CSRF protection
+- Input validation and sanitization
 
-Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
+## License
 
-## Breaking changes
-
-We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
-
-However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
-
-## Developing
-
-To run from source:
-
-```sh
-# Go >= 1.22
-go run . help
-```
+Private - All rights reserved

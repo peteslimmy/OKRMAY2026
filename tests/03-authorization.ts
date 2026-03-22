@@ -14,7 +14,7 @@ import https from 'https';
 
 // Configuration
 const CONFIG = {
-    SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://ojuqujjkrmgplqxnmpxe.supabase.co',
+    SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://pvzecbcpuhmfytfdonfc.supabase.co',
     SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || '',
     TEST_USER_TOKEN: process.env.TEST_USER_TOKEN || '',
     TIMEOUT: 15000

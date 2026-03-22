@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { getBusinessUnits, getBUPerformanceData } from '../utils';
-import { BusinessUnit, BUPerformanceDataPoint } from '../types';
+import { BusinessUnit, BUPerformanceDataPoint } from '../src/types';
 import { Building2, Calendar, ChevronDown } from 'lucide-react';
 
 interface BUPerformanceMatrixProps {

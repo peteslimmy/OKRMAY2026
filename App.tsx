@@ -1,17 +1,16 @@
 
-import React, { useState, useEffect, useMemo, lazy, Suspense, Component, ReactNode } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense, ReactNode } from 'react';
 import { HashRouter as Router, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import {
-  LayoutDashboard, FileText, Target, Users, Settings as SettingsIcon, LogOut, Menu, X, Zap, CalendarDays, Building2, Briefcase, ShieldAlert, ShieldCheck as ShieldIcon, LoaderCircle, AlertTriangle, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, UserCheck, Landmark
+  LayoutDashboard, FileText, Target, Users, Settings as SettingsIcon, LogOut, Menu, X, Zap, CalendarDays, Building2, ShieldAlert, ShieldCheck as ShieldIcon, LoaderCircle, AlertTriangle, AlertCircle, ChevronLeft, ChevronRight, ChevronDown, UserCheck, Landmark, BarChart3
 } from 'lucide-react';
-import { UserRole, User } from './types';
+import { UserRole, User } from './src/types';
 import {
   hasPermission, canManageUsers, canViewSettings, canManageObjectives, canManageUnits,
   getCurrentWeekRange,
   getBusinessUnits, getCurrentQuarterInfo, getSessionUser,
   getRecentWeekRanges,
   logAudit,
-  canViewStrategicNotes,
   getRegistryUsers,
   setSimulatedUser,
   getSimulatedUser,
@@ -21,10 +20,10 @@ import {
 import { Select } from './components/ui/Select';
 import { supabase, checkConnection } from './supabaseClient';
 import { Auth } from './components/Auth';
+import ReportModule from './components/ReportModule';
+import AllSummaryReports from './components/AllSummaryReports';
 
 const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
-const ReportingEngine = lazy(() => import('./components/ReportingEngine').then(m => ({ default: m.ReportingEngine })));
-const StrategicBoard = lazy(() => import('./components/StrategicBoard').then(m => ({ default: m.StrategicBoard })));
 const BusinessObjectives = lazy(() => import('./components/BusinessObjectives').then(m => ({ default: m.BusinessObjectives })));
 const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 const BusinessUnits = lazy(() => import('./components/BusinessUnits').then(m => ({ default: m.BusinessUnits })));
@@ -53,23 +52,29 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  props: ErrorBoundaryProps;
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  public static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+  public componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error('[ERROR_BOUNDARY] Caught error:', error, errorInfo);
   }
 
-  render(): ReactNode {
+  public render(): React.ReactNode {
     if (this.state.hasError) {
-      return this.props.fallback || (
+      const fallback = this.props.fallback;
+      if (fallback) {
+        return fallback;
+      }
+
+      return (
         <div className="flex flex-col items-center justify-center h-[60vh] p-8">
           <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
           <h2 className="text-xl font-bold text-slate-900 mb-2">Something went wrong</h2>
@@ -83,6 +88,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
         </div>
       );
     }
+
     return this.props.children;
   }
 }
@@ -122,10 +128,12 @@ const UnifiedHeader: React.FC<{
   setSelectedYear: (y: number) => void,
   selectedBu: string,
   setSelectedBu: (bu: string) => void,
+  selectedCycle: string,
+  setSelectedCycle: (c: string) => void,
   selectedWeek: string,
   setSelectedWeek: (w: string) => void,
   currentUser: any
-}> = ({ sidebarOpen, setSidebarOpen, selectedYear, setSelectedYear, selectedBu, setSelectedBu, selectedWeek, setSelectedWeek, currentUser }) => {
+}> = ({ sidebarOpen, setSidebarOpen, selectedYear, setSelectedYear, selectedBu, setSelectedBu, selectedCycle, setSelectedCycle, selectedWeek, setSelectedWeek, currentUser }) => {
   const [dbHealthy, setDbHealthy] = useState<boolean>(true);
   const [availableBUs, setAvailableBUs] = useState([]);
   const weekRange = getCurrentWeekRange();
@@ -171,12 +179,16 @@ const UnifiedHeader: React.FC<{
             variant="header"
           />
 
-          <div className="flex flex-col px-8 py-3 border-l border-slate-100 justify-center min-w-[180px] hover:bg-slate-50/50 transition-colors cursor-default">
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-              Current Cycle
-            </span>
-            <span className="text-[14px] font-bold text-slate-700 whitespace-nowrap">{weekRange.split(',')[0]}</span>
-          </div>
+          <Select
+            label="Current Cycle"
+            value={selectedCycle}
+            onChange={(val) => setSelectedCycle(String(val))}
+            options={quarterWeeks.map((w: any) => {
+              const dateRange = w.label.split(':')[1]?.split(',')[0]?.trim() || w.label;
+              return { label: dateRange, value: w.value };
+            })}
+            variant="header"
+          />
 
           <Select
             label="Intelligence Period"
@@ -229,6 +241,7 @@ const App = () => {
 
   const [selectedYear, setSelectedYear] = useState(() => getCurrentQuarterInfo().year);
   const [selectedBu, setSelectedBu] = useState('all');
+  const [selectedCycle, setSelectedCycle] = useState(() => getRecentWeekRanges()[0]?.value || 'all');
   const [selectedWeek, setSelectedWeek] = useState('all');
   const [customLogo, setCustomLogo] = useState<string | null>(null);
 
@@ -322,16 +335,8 @@ const App = () => {
     { to: '/', label: 'Executive View', icon: <LayoutDashboard size={18} /> },
     { to: '/objectives', label: 'Quarterly KRs', icon: <Target size={18} />, check: canManageObjectives },
     { to: '/reporting', label: 'Weekly Reporting', icon: <FileText size={18} /> },
-    // Operations parent module with nested submenus
-    {
-      label: 'Operations',
-      icon: <Briefcase size={18} />,
-      isParent: true,
-      children: [
-        { to: '/operations/notes', label: 'Session Notes', icon: <FileText size={16} />, check: canViewStrategicNotes },
-        { to: '/operations/attendance', label: 'Attendance', icon: <Users size={16} /> },
-      ]
-    },
+    { to: '/reports', label: 'All Summary Reports', icon: <BarChart3 size={18} /> },
+    { to: '/operations/attendance', label: 'Attendance', icon: <Users size={18} /> },
     { to: '/integrity', label: 'Integrity Audit', icon: <ShieldIcon size={18} />, check: checkIntegrityAccess },
     { to: '/users', label: 'User Directory', icon: <Users size={18} />, check: canManageUsers },
     { to: '/units', label: 'Business Units', icon: <Building2 size={18} />, check: canManageUnits },
@@ -459,8 +464,11 @@ const App = () => {
   // If we get here without currentUser, show loading
   if (!currentUser) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #dde1f5 0%, #c8ccee 40%, #d4c9f0 100%)' }}>
-        <LoaderCircle className="w-10 h-10 text-indigo-500 animate-spin" />
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-50 via-primary-50/30 to-slate-100">
+        <div className="text-center">
+          <LoaderCircle className="w-10 h-10 text-primary-600 animate-spin mx-auto mb-4" />
+          <p className="text-sm text-slate-500 font-medium">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -617,6 +625,8 @@ const App = () => {
               setSelectedYear={setSelectedYear}
               selectedBu={selectedBu}
               setSelectedBu={setSelectedBu}
+              selectedCycle={selectedCycle}
+              setSelectedCycle={setSelectedCycle}
               selectedWeek={selectedWeek}
               setSelectedWeek={setSelectedWeek}
               currentUser={currentUser}
@@ -624,13 +634,10 @@ const App = () => {
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
                 <Route path="/" element={<Dashboard selectedYear={selectedYear} selectedBu={selectedBu} selectedWeek={selectedWeek} />} />
-                <Route path="/reporting" element={<ReportingEngine selectedYear={selectedYear} selectedWeek={selectedWeek} />} />
+                <Route path="/reporting" element={<ReportModule />} />
+                <Route path="/reports" element={<AllSummaryReports />} />
                 <Route path="/objectives" element={<ProtectedRoute check={canManageObjectives}><BusinessObjectives selectedYear={selectedYear} setSelectedYear={setSelectedYear} /></ProtectedRoute>} />
-                {/* Operations subroutes */}
-                <Route path="/operations/notes" element={<ProtectedRoute check={canViewStrategicNotes}><StrategicBoard selectedYear={selectedYear} /></ProtectedRoute>} />
                 <Route path="/operations/attendance" element={<Attendance />} />
-                {/* Legacy route - kept for backwards compatibility */}
-                <Route path="/strategic" element={<ProtectedRoute check={canViewStrategicNotes}><StrategicBoard selectedYear={selectedYear} /></ProtectedRoute>} />
                 <Route path="/integrity" element={<ProtectedRoute check={checkIntegrityAccess}><IntegrityChecker /></ProtectedRoute>} />
                 <Route path="/users" element={<ProtectedRoute check={canManageUsers}><UserManagement /></ProtectedRoute>} />
                 <Route path="/units" element={<ProtectedRoute check={canManageUnits}><BusinessUnits /></ProtectedRoute>} />

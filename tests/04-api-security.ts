@@ -15,7 +15,7 @@ import http from 'http';
 
 // Configuration
 const CONFIG = {
-    SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://ojuqujjkrmgplqxnmpxe.supabase.co',
+    SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://pvzecbcpuhmfytfdonfc.supabase.co',
     SUPABASE_ANON_KEY: process.env.VITE_SUPABASE_ANON_KEY || '',
     TIMEOUT: 15000
 };
