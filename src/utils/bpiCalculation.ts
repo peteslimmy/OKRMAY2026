@@ -63,9 +63,9 @@ export const calculateBPI = async (userId?: string, quarter?: string, year?: num
     const { data: goals } = await supabase
       .from('activities')
       .select('*')
+      .gte('year', targetYear)
       .gte('week', qStartWeek)
-      .lte('week', qEndWeek)
-      .gte('year', targetYear);
+      .lte('week', qEndWeek);
     
     const { data: profiles } = await supabase.from('profiles').select('*');
     const users = profiles || [];
@@ -73,14 +73,14 @@ export const calculateBPI = async (userId?: string, quarter?: string, year?: num
     const { data: auditLogs } = await supabase
       .from('audit_logs')
       .select('*')
-      .in('action', ['CREATE', 'UPDATE'])
-      .gte('timestamp', startDate.toISOString());
+      .gte('timestamp', startDate.toISOString())
+      .in('action', ['CREATE', 'UPDATE']);
     
     const { data: penalties } = await supabase
       .from('audit_logs')
       .select('*')
-      .eq('action', 'INTEGRITY_ADJUSTMENT')
-      .gte('timestamp', startDate.toISOString());
+      .gte('timestamp', startDate.toISOString())
+      .eq('action', 'PENALTY');
     
     const results: BPIScore[] = [];
     

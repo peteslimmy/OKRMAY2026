@@ -1,6 +1,6 @@
 import { test, expect, Page, Locator } from '@playwright/test';
-import { waitForPageLoad, safeClick } from '../utils/test-helpers';
-import { BusinessUnitsPage } from '../utils/page-objects';
+import { waitForPageLoad, safeClick } from './utils/test-helpers';
+import { BusinessUnitsPage } from './utils/page-objects';
 
 test.describe('Business Units Module Tests', () => {
 
