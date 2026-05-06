@@ -2,6 +2,12 @@
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+
+# Secrets and configs
+opencode.json
+*.db
 
 # Logs
 logs

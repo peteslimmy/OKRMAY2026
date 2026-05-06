@@ -1,0 +1,504 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\playwright.config.ts",
+    "rootDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/tests/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 4
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/playwright-report",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 4
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/playwright-report",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 4
+        },
+        "id": "firefox",
+        "name": "firefox",
+        "testDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/playwright-report",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 4
+        },
+        "id": "webkit",
+        "name": "webkit",
+        "testDir": "C:/Users/4Core/Downloads/MY DEVELOPMENT/OKR2026-feb/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "playwright-report",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "playwright-report/results.json"
+        }
+      ],
+      [
+        "list",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 4,
+    "webServer": {
+      "command": "npm run dev -- --port 3005",
+      "url": "http://localhost:3005",
+      "reuseExistingServer": true,
+      "timeout": 120000
+    }
+  },
+  "suites": [
+    {
+      "title": "api\\supabase-api.spec.ts",
+      "file": "api/supabase-api.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "API Integration Tests",
+          "file": "api/supabase-api.spec.ts",
+          "line": 5,
+          "column": 6,
+          "specs": [
+            {
+              "title": "01. Supabase connection should be accessible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 711,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n🔗 API Base: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.166Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-a7e51c16f6cd9ecfab96",
+              "file": "api/supabase-api.spec.ts",
+              "line": 7,
+              "column": 3
+            },
+            {
+              "title": "02. Business units endpoint should return data",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 640,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n📊 Business Units: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.288Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-d54117873f087b5a7a36",
+              "file": "api/supabase-api.spec.ts",
+              "line": 19,
+              "column": 3
+            },
+            {
+              "title": "03. Objectives endpoint should return data",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 692,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n🎯 Objectives: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.196Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-5d468234a6490e25f4c4",
+              "file": "api/supabase-api.spec.ts",
+              "line": 39,
+              "column": 3
+            },
+            {
+              "title": "04. Monthly actuals endpoint should return financial data",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 682,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n💰 Monthly Actuals: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.193Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-14641ccf60ebb573f257",
+              "file": "api/supabase-api.spec.ts",
+              "line": 59,
+              "column": 3
+            },
+            {
+              "title": "05. Key results endpoint should return KRs",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 3,
+                      "status": "passed",
+                      "duration": 176,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n📈 Key Results: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.957Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-2e9f55bae0c1801fbd74",
+              "file": "api/supabase-api.spec.ts",
+              "line": 79,
+              "column": 3
+            },
+            {
+              "title": "06. Violations endpoint should be accessible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 159,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n⚠️ Violations: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.962Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-9ef99d4a4901f571c848",
+              "file": "api/supabase-api.spec.ts",
+              "line": 99,
+              "column": 3
+            },
+            {
+              "title": "07. Governance config endpoint should be accessible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 2,
+                      "status": "passed",
+                      "duration": 175,
+                      "errors": [],
+                      "stdout": [
+                        {
+                          "text": "\n⚙️ Governance Config: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:20.975Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-3dd96d6f5e7f8d61771e",
+              "file": "api/supabase-api.spec.ts",
+              "line": 119,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "Data Integrity Tests",
+          "file": "api/supabase-api.spec.ts",
+          "line": 135,
+          "column": 6,
+          "specs": [
+            {
+              "title": "08. All tables should have proper schema",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 60000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 1793,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\tests\\e2e\\api\\supabase-api.spec.ts:172:27",
+                        "location": {
+                          "file": "C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\tests\\e2e\\api\\supabase-api.spec.ts",
+                          "column": 27,
+                          "line": 172
+                        },
+                        "snippet": "\u001b[0m \u001b[90m 170 |\u001b[39m     }\n \u001b[90m 171 |\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 172 |\u001b[39m     expect(allAccessible)\u001b[33m.\u001b[39mtoBe(\u001b[36mtrue\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 173 |\u001b[39m   })\u001b[33m;\u001b[39m\n \u001b[90m 174 |\u001b[39m })\u001b[33m;\u001b[39m\u001b[0m"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\tests\\e2e\\api\\supabase-api.spec.ts",
+                            "column": 27,
+                            "line": 172
+                          },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\n  170 |     }\n  171 |\n> 172 |     expect(allAccessible).toBe(true);\n      |                           ^\n  173 |   });\n  174 | });\n    at C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\tests\\e2e\\api\\supabase-api.spec.ts:172:27"
+                        }
+                      ],
+                      "stdout": [
+                        {
+                          "text": "\n📋 Table Schema Check:\n"
+                        },
+                        {
+                          "text": "  ❌ profiles: 401\n"
+                        },
+                        {
+                          "text": "  ❌ business_units: 401\n"
+                        },
+                        {
+                          "text": "  ❌ yearly_themes: 401\n"
+                        },
+                        {
+                          "text": "  ❌ objectives: 401\n"
+                        },
+                        {
+                          "text": "  ❌ key_results: 401\n"
+                        },
+                        {
+                          "text": "  ❌ sub_krs: 401\n"
+                        },
+                        {
+                          "text": "  ❌ activities: 401\n"
+                        },
+                        {
+                          "text": "  ❌ monthly_actuals: 401\n"
+                        },
+                        {
+                          "text": "  ❌ violations: 401\n"
+                        },
+                        {
+                          "text": "  ❌ governance_config: 401\n"
+                        }
+                      ],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-05-05T11:18:21.011Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\playwright-report\\api-supabase-api-Data-Inte-b9af7-s-should-have-proper-schema-chromium\\error-context.md"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "C:\\Users\\4Core\\Downloads\\MY DEVELOPMENT\\OKR2026-feb\\tests\\e2e\\api\\supabase-api.spec.ts",
+                        "column": 27,
+                        "line": 172
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "0e1e58db00971d66cfc2-21dab83e228baca775fd",
+              "file": "api/supabase-api.spec.ts",
+              "line": 137,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-05-05T11:18:14.742Z",
+    "duration": 8423.913,
+    "expected": 7,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

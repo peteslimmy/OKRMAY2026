@@ -88,7 +88,10 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 VITE_SUPABASE_SERVICE_KEY=your-service-role-key
 VITE_OPENROUTER_API_KEY=your-openrouter-key
+VITE_LOCAL_AI_URL=http://localhost:11434/api/chat
 ```
+
+For local Ollama integration, set `VITE_LOCAL_AI_URL` to your Ollama endpoint and choose the `Local Ollama` provider in the app AI settings.
 
 ## Design System
 

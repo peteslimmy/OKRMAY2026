@@ -22,12 +22,16 @@ function getCorsHeaders(req: Request): Record<string, string> {
         // Only allow known development origins with EXACT matching (not partial)
         const devOrigins = [
             'http://localhost:3000',
+            'http://localhost:3030',
             'http://localhost:5173',
             'http://127.0.0.1:3000',
+            'http://127.0.0.1:3030',
             'http://127.0.0.1:5173',
             'https://localhost:3000',
+            'https://localhost:3030',
             'https://localhost:5173',
             'https://127.0.0.1:3000',
+            'https://127.0.0.1:3030',
             'https://127.0.0.1:5173',
         ];
         // Production domains should be explicitly set via ALLOWED_ORIGINS env var
@@ -434,7 +438,7 @@ serve(async (req: Request) => {
                 type: 'recovery',
                 email: to,
                 options: {
-                    redirectTo: redirectTo || `${Deno.env.get('SITE_URL') || 'http://localhost:3000'}`
+                    redirectTo: redirectTo || `${Deno.env.get('SITE_URL') || 'http://localhost:3030'}`
                 }
             })
 

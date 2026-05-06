@@ -8,15 +8,47 @@ const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  // Only enable simulation in development mode, not staging or production
   const simulationEnabled = mode === 'development';
+  const isProduction = mode === 'production';
+  
   return {
     server: {
-      port: 3000,
-      host: '0.0.0.0',
+      port: 3030,
+      host: true,
+      strictPort: true,
+      open: false,
+      hmr: {
+        overlay: true,
+      },
+      cors: true,
+      fs: {
+        allow: ['..']
+      }
     },
-    plugins: [react()],
+    plugins: [
+      react(),
+      // Production safety: validate environment
+      {
+        name: 'prod-env-validator',
+        configResolved(config) {
+          if (isProduction) {
+            const useMock = env.VITE_USE_MOCK === 'true';
+            const debugEnabled = env.VITE_DEBUG === 'true';
+            if (useMock) {
+              throw new Error('CRITICAL: Mock mode (VITE_USE_MOCK=true) must NEVER be enabled in production');
+            }
+            if (debugEnabled) {
+              console.warn('⚠️ WARNING: Debug mode is enabled in production build');
+            }
+          }
+        }
+      }
+    ],
     build: {
+      minify: isProduction ? 'esbuild' : false,
+      esbuild: {
+        drop: isProduction ? ['console', 'debugger'] : [],
+      },
       rollupOptions: {
         output: {
           manualChunks: {
@@ -29,11 +61,13 @@ export default defineConfig(({ mode }) => {
       }
     },
     define: {
-      '__SIMULATION_ENABLED__': simulationEnabled
+      '__SIMULATION_ENABLED__': simulationEnabled,
+      '__DEBUG_MODE__': env.VITE_DEBUG === 'true',
+      '__USE_MOCK__': env.VITE_USE_MOCK === 'true'
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
       }
     }
   };

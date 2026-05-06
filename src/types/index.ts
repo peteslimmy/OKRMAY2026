@@ -14,6 +14,7 @@ export enum UserRole {
   Admin = 'Admin',
   Manager = 'Manager',
   Director = 'Director',
+  BULead = 'BULead',
   Viewer = 'Viewer'
 }
 
@@ -26,6 +27,40 @@ export enum TaskStatus {
   Undefined = 'Undefined',
   Done = 'Done',
   NotDone = 'NotDone'
+}
+
+export enum QuarterType {
+  Q1 = 'Q1',
+  Q2 = 'Q2',
+  Q3 = 'Q3',
+  Q4 = 'Q4'
+}
+
+export interface YearlyTheme {
+  id: string;
+  year: number;
+  title: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+  updated_by: string;
+  is_active: boolean;
+}
+
+export interface QuarterlyObjective {
+  id: string;
+  yearly_theme_id: string;
+  quarter: QuarterType;
+  year: number;
+  title: string;
+  description: string;
+  status: 'Draft' | 'Active' | 'Locked';
+  progress: number;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+  updated_by: string;
 }
 
 export enum AttendanceStatus {
@@ -45,6 +80,11 @@ export enum Permission {
   USERS_EDIT = 'USERS_EDIT',
   USERS_DELETE = 'USERS_DELETE',
   USERS_ASSIGN_ROLE = 'USERS_ASSIGN_ROLE',
+  GOAL_VIEW = 'GOAL_VIEW',
+  GOAL_CREATE = 'GOAL_CREATE',
+  GOAL_EDIT = 'GOAL_EDIT',
+  GOAL_DELETE = 'GOAL_DELETE',
+  GOAL_VIEW_ALL_BU = 'GOAL_VIEW_ALL_BU',
   ACTIVITY_VIEW = 'ACTIVITY_VIEW',
   ACTIVITY_CREATE = 'ACTIVITY_CREATE',
   ACTIVITY_EDIT = 'ACTIVITY_EDIT',
@@ -77,25 +117,30 @@ export enum Permission {
 
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   [UserRole.Viewer]: [
-    Permission.ACTIVITY_VIEW, Permission.KR_VIEW,
+    Permission.GOAL_VIEW, Permission.KR_VIEW,
     Permission.GOVERNANCE_VIEW, Permission.REPORTS_VIEW_BASIC
   ],
+  [UserRole.BULead]: [
+    Permission.GOAL_VIEW, Permission.GOAL_CREATE, Permission.GOAL_EDIT,
+    Permission.KR_VIEW, Permission.GOVERNANCE_VIEW,
+    Permission.REPORTS_VIEW_BASIC, Permission.ATTENDANCE_VIEW
+  ],
   [UserRole.Manager]: [
-    Permission.ACTIVITY_VIEW, Permission.KR_VIEW, Permission.GOVERNANCE_VIEW,
-    Permission.REPORTS_VIEW_BASIC, Permission.ACTIVITY_CREATE, Permission.ACTIVITY_EDIT,
+    Permission.GOAL_VIEW, Permission.KR_VIEW, Permission.GOVERNANCE_VIEW,
+    Permission.REPORTS_VIEW_BASIC, Permission.GOAL_CREATE, Permission.GOAL_EDIT,
     Permission.REPORTS_VIEW_ADVANCED, Permission.REPORTS_EXPORT, Permission.ATTENDANCE_VIEW
   ],
   [UserRole.Director]: [
-    Permission.ACTIVITY_VIEW, Permission.ACTIVITY_CREATE, Permission.ACTIVITY_EDIT,
+    Permission.GOAL_VIEW, Permission.GOAL_CREATE, Permission.GOAL_EDIT,
     Permission.KR_VIEW, Permission.GOVERNANCE_VIEW, Permission.REPORTS_VIEW_BASIC,
     Permission.REPORTS_VIEW_ADVANCED, Permission.REPORTS_EXPORT, Permission.ATTENDANCE_VIEW,
-    Permission.ACTIVITY_DELETE, Permission.KR_CREATE, Permission.KR_EDIT,
+    Permission.GOAL_DELETE, Permission.KR_CREATE, Permission.KR_EDIT,
     Permission.REPORTS_VIEW_EXECUTIVE, Permission.FINANCE_VIEW,
     Permission.ATTENDANCE_MANAGE, Permission.AUDIT_VIEW
   ],
   [UserRole.Admin]: [
-    Permission.ACTIVITY_VIEW, Permission.ACTIVITY_CREATE, Permission.ACTIVITY_EDIT,
-    Permission.ACTIVITY_DELETE, Permission.KR_VIEW, Permission.KR_CREATE, Permission.KR_EDIT,
+    Permission.GOAL_VIEW, Permission.GOAL_CREATE, Permission.GOAL_EDIT,
+    Permission.GOAL_DELETE, Permission.KR_VIEW, Permission.KR_CREATE, Permission.KR_EDIT,
     Permission.GOVERNANCE_VIEW, Permission.REPORTS_VIEW_BASIC, Permission.REPORTS_VIEW_ADVANCED,
     Permission.REPORTS_VIEW_EXECUTIVE, Permission.REPORTS_EXPORT, Permission.FINANCE_VIEW,
     Permission.ATTENDANCE_VIEW, Permission.ATTENDANCE_MANAGE, Permission.AUDIT_VIEW,
@@ -130,28 +175,77 @@ export interface BusinessUnit {
   name: string;
   head_user_id?: string;
   contactEmail?: string;
+  avatarUrl?: string;
+}
+
+export interface Objective {
+  id: string;
+  title: string;
+  description?: string;
+  quarter: 'Q1' | 'Q2' | 'Q3' | 'Q4';
+  year: number;
+  status: 'Active' | 'Locked';
+  lock_date?: string;
+  progress: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface KeyResult {
   id: string;
+  objective_id: string;
+  kr_slot: 'KR1' | 'KR2' | 'KR3' | 'KR4';
   title: string;
   description?: string;
-  quarter: string;
-  year: number;
-  label: string;
-  owner_id: string;
   progress: number;
   status: 'Green' | 'Amber' | 'Red';
+  version: number;
+  label?: string;
   parent_kr_id?: string | null;
+  quarter?: string;
+  year?: number;
+  owner_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SubKR {
+  id: string;
+  kr_id: string;
+  title: string;
+  progress: number;
+  weight: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface KRVersion {
+  id: string;
+  kr_id: string;
+  version_number: number;
+  snapshot: any;
+  modified_by: string;
+  modified_at: string;
+}
+
+export interface StrategicAuditLog {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: 'CREATE' | 'UPDATE' | 'LOCK' | 'OVERRIDE';
+  performed_by: string;
+  reason?: string;
+  timestamp: string;
 }
 
 export interface Task {
   id: string;
   title: string;
   status: TaskStatus;
+  goal_id?: string;
 }
 
-export interface Activity {
+export interface Goal {
   id: string;
   key_result_id: string;
   owner_id: string;
@@ -162,6 +256,7 @@ export interface Activity {
   week: number;
   year: number;
   score: number;
+  sub_kr_tag?: string; // e.g., "KR1.1" or "Stressed"
 }
 
 export interface AuditLogEntry {

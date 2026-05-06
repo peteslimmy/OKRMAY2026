@@ -1,0 +1,34 @@
+// Supabase Edge Function: send-kr-reminders/index.ts
+// This function would be triggered by a cron job.
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts" 
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+serve(async (req) => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  )
+
+  // 1. Find all Admins
+  const { data: admins } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .eq('role', 'Admin')
+
+  // 2. Identify KRs that haven't been updated in > 7 days
+  const { data: staleKRs } = await supabase
+    .from('key_results')
+    .select('title, updated_at')
+    .lt('updated_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+
+  if (staleKRs && staleKRs.length > 0) {
+    // 3. Send Notification (via Email/Slack/In-app)
+    for (const admin of admins || []) {
+      console.log(`Sending reminder to ${admin.email}: ${staleKRs.length} KRs require update.`)
+      // await sendEmail(admin.email, 'KR Update Reminder', 'Please update your KR progress...')
+    }
+  }
+
+  return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } })
+})

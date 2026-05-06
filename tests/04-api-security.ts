@@ -213,8 +213,8 @@ async function testSQLInjectionKeyResults(): Promise<void> {
     }
 }
 
-// Test 4: XSS in Activity Creation
-async function testXSSInActivityCreation(): Promise<void> {
+// Test 4: XSS in Goal Creation
+async function testXSSInGoalCreation(): Promise<void> {
     const startTime = Date.now();
     let sanitized = true;
 
@@ -430,7 +430,7 @@ async function runSecurityTests() {
     await testSQLInjectionKeyResults();
 
     // XSS tests
-    await testXSSInActivityCreation();
+    await testXSSInGoalCreation();
     await testXSSInSearchParams();
 
     // Other security tests
