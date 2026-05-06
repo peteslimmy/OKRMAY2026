@@ -82,7 +82,7 @@ export const AnimatedCounter: React.FC<{
   const [displayValue, setDisplayValue] = useState(0);
 
   useEffect(() => {
-    let start = 0;
+    const start = 0;
     const end = value;
     const startTime = performance.now();
 
